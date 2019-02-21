@@ -1,0 +1,6 @@
+[submodule "BuildUtils"]
+	path = BuildUtils
+	url = https://github.com/dmoody256/BuildUtils
+[submodule "repo"]
+	path = repo
+	url = https://github.com/harfbuzz/harfbuzz.git
