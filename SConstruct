@@ -12,7 +12,8 @@ import SCons.Script.Main
 
 from BuildUtils.SconsUtils import SetBuildJobs, SetupBuildEnv, ProgressCounter
 from BuildUtils.ColorPrinter import ColorPrinter
-from BuildUtils import str2bool
+from BuildUtils.FindPackages import FindFreetype
+
 def CreateNewEnv():
 
     SetupOptions()
@@ -25,10 +26,14 @@ def CreateNewEnv():
     env['PROJECT_DIR'] = os.path.abspath(Dir('.').abspath).replace('\\', '/')
     SetBuildJobs(env)
 
-    with open ('repo/src/Makefile.sources') as f:
-        sources = re.search(r'^HB_BASE_sources\s=\s([^$]+)\\$', f.read(), re.MULTILINE).group(1).split('\\')
-        sources = [line.strip() for line in sources if line != ""]
-        sources = ['repo/src/' + line  for line in sources]
+    GetHarfbuzzVersion(env)
+
+    FindFreetype(env)
+
+    exit()
+    GetSources('HB_BASE_sources', 'repo/src/Makefile.sources')
+
+    
 
     base_source_files = [
         'repo/adler32.c',
@@ -690,6 +695,23 @@ def ConfigPlatformIDE(env, sourceFiles, headerFiles, resources, program):
                     variant = buildVariant,
                     cmdargs = cmdargs)
     return env
+
+def getSources(var, file):
+    with open (file) as f:
+        sources = re.search(r'^' + var + r'\s=\s([^$]+)\\$', f.read(), re.MULTILINE).group(1).split('\\')
+        sources = [line.strip() for line in sources if line != ""]
+        sources = [os.path.dirname(file) + '/' + line  for line in sources]
+        return sources
+
+def GetHarfbuzzVersion(env=None):
+    with open('repo/configure.ac') as f:
+        match = re.search(r'\[(([0-9]+)\.([0-9]+)\.([0-9]+))\]', f.read(), re.MULTILINE)
+        if env:
+            env['HB_VERSION'] = match.group(1).strip()
+            env['HB_VERSION_MAJOR'] = match.group(2).strip()
+            env['HB_VERSION_MINOR'] = match.group(3).strip()
+            env['HB_VERSION_MICRO'] = match.group(4).strip()
+        return match.group(1).strip()
 
 def SetupInstalls(env):
 
