@@ -29,6 +29,7 @@ def CreateNewEnv():
     )
 
     env['PROJECT_DIR'] = os.path.abspath(Dir('.').abspath).replace('\\', '/')
+    env['BUILD_DIR'] = 'build'
     SetBuildJobs(env)
 
     GetHarfbuzzVersion(env)
@@ -52,7 +53,7 @@ def CreateNewEnv():
                                   'repo/src/Makefile.sources')
 
     if GetOption('option_have_freetype'):
-        if not FindFreetype(env):
+        if not FindFreetype(env, conf_dir=env['BUILD_DIR']):
             p.ErrorPrint(
                 "Requested build with Freetype, but couldn't find it.")
             return
@@ -60,7 +61,7 @@ def CreateNewEnv():
         project_sources += ['repo/src/hb-ft.cc']
         project_headers += ['repo/src/hb-ft.h']
 
-    if GetOption('option_have_graphite2') and FindGraphite2(env):
+    if GetOption('option_have_graphite2') and FindGraphite2(env, conf_dir=env['BUILD_DIR']):
         env.Append(CPPDEFINES=['HAVE_GRAPHITE2'])
         project_sources += ['repo/src/hb-graphite2.cc']
         project_headers += ['repo/src/hb-graphite2.h']
@@ -188,7 +189,7 @@ def CreateNewEnv():
         'static',
         'harfbuzz_static',
         project_sources + project_extra_sources,
-        'build/build_static',
+        env['BUILD_DIR'] + '/build_static',
         'deploy')
 
     shared_env, harf_shared = SetupBuildEnv(
@@ -197,7 +198,7 @@ def CreateNewEnv():
         'shared',
         'harfbuzz',
         project_sources + project_extra_sources,
-        'build/build_shared',
+        env['BUILD_DIR'] + '/build_shared',
         'deploy')
 
     tests = [
@@ -217,7 +218,7 @@ def CreateNewEnv():
             'exec',
             test,
             ['repo/src/' + test + ".cc"],
-            'build/tests',
+            env['BUILD_DIR'] + '/tests',
             'deploy')
         if test == 'hb-ot-tag':
             test_env.Append(CPPDEFINES=['MAIN'])
@@ -237,9 +238,9 @@ def ConfigureEnv(env):
     if not env.GetOption('clean'):
 
         if(GetOption('option_reconfigure')):
-            os.remove('build.conf')
+            os.remove(env['BUILD_DIR'] + '/build.conf')
 
-        vars = Variables('build.conf')
+        vars = Variables(env['BUILD_DIR'] + '/build.conf')
 
         # vars.Add('ZPREFIX', '' )
         # vars.Add('SOLO', '')
@@ -250,7 +251,7 @@ def ConfigureEnv(env):
         # if('--solo' in sys.argv):    env['SOLO']    = GetOption('option_solo')
         # if('--cover' in sys.argv):   env['COVER']   = GetOption('option_cover')
 
-        vars.Save('build.conf', env)
+        vars.Save(env['BUILD_DIR'] + '/build.conf', env)
 
         configureString = ""
         # if env['ZPREFIX']: configureString += "--zprefix "
@@ -266,7 +267,7 @@ def ConfigureEnv(env):
 
         SCons.Script.Main.progress_display.set_mode(1)
         
-        conf = Configure(env, conf_dir="build/conf_tests", log_file="conf.log",
+        conf = Configure(env, conf_dir=env['BUILD_DIR'] + "/conf_tests", log_file=env['BUILD_DIR'] + "/conf.log",
                         custom_tests={  
                             'CheckLargeFile64': CheckLargeFile64,
                             'CheckFseeko': CheckFseeko,
