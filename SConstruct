@@ -200,6 +200,33 @@ def CreateNewEnv():
         'build/build_shared',
         'deploy')
 
+    tests = [
+        'main',
+        'test',
+        'test-would-substitute', 
+        'test-size-params',
+        'test-buffer-serialize',
+        'hb-ot-tag', 
+        'test-unicode-ranges'
+    ]
+
+    for test in tests:
+        test_env, test_bin = SetupBuildEnv(
+            env,
+            progress,
+            'exec',
+            test,
+            ['repo/src/' + test + ".cc"],
+            'build/tests',
+            'deploy')
+        if test == 'hb-ot-tag':
+            test_env.Append(CPPDEFINES=['MAIN'])
+        test_env.Append(
+            LIBS=['harfbuzz'],
+            LIBPATH=['deploy'])
+
+
+
     Progress(progress, interval=1)
 
 
@@ -231,27 +258,29 @@ def ConfigureEnv(env):
         # if env['COVER']:   configureString += "--cover "
 
         if configureString == "":
-            configureString = "Configuring... "
+            configureString = " Configuring... "
         else:
-            configureString = "Configuring with " + configureString
+            configureString = " Configuring with " + configureString
 
         p.InfoPrint(configureString)
 
         SCons.Script.Main.progress_display.set_mode(1)
-
+        
         conf = Configure(env, conf_dir="build/conf_tests", log_file="conf.log",
-                         custom_tests={
-                             'CheckLargeFile64': CheckLargeFile64,
-                             'CheckFseeko': CheckFseeko,
-                             'CheckSizeT': CheckSizeT,
-                             'CheckSizeTLongLong': CheckSizeTLongLong,
-                             'CheckSizeTPointerSize': CheckSizeTPointerSize,
-                             'CheckSharedLibrary': CheckSharedLibrary,
-                             'CheckUnistdH': CheckUnistdH,
-                             'CheckSolarisAtomics': CheckSolarisAtomics,
-                             'CheckIntelAtomicPrimitives': CheckIntelAtomicPrimitives
-                         })
-
+                        custom_tests={  
+                            'CheckLargeFile64': CheckLargeFile64,
+                            'CheckFseeko': CheckFseeko,
+                            'CheckSizeT': CheckSizeT,
+                            'CheckSizeTLongLong': CheckSizeTLongLong,
+                            'CheckSizeTPointerSize': CheckSizeTPointerSize,
+                            'CheckSharedLibrary': CheckSharedLibrary,
+                            'CheckUnistdH': CheckUnistdH,
+                            'CheckSolarisAtomics': CheckSolarisAtomics,
+                            'CheckIntelAtomicPrimitives': CheckIntelAtomicPrimitives,
+                            'CheckFunc' : CheckFunc,
+                            'CheckHeader' : CheckHeader
+                        })
+     
         # with open('repo/zconf.h.in', 'r') as content_file:
         #    conf.env["ZCONFH"] = str(content_file.read())
 
@@ -293,7 +322,7 @@ def ConfigureEnv(env):
 
         for header in check_headers:
             have_header = 'HAVE_' + header.upper().replace('/', '_').replace('.', '_')
-            if(conf.CheckCHeader(header)):
+            if(conf.CheckHeader(header, language='C')):
                 env[have_header] = True
                 env.Append(CPPDEFINES=[have_header])
             else:
