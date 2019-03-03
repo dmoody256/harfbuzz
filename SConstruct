@@ -14,7 +14,7 @@ import SCons.Script.Main
 
 from BuildUtils.SconsUtils import SetBuildJobs, SetupBuildEnv, ProgressCounter
 from BuildUtils.ColorPrinter import ColorPrinter
-from BuildUtils.FindPackages import FindFreetype, FindGraphite2
+from BuildUtils.FindPackages import FindFreetype, FindGraphite2, FindGlib
 from BuildUtils.ConfigureChecks import *
 
 
@@ -74,7 +74,7 @@ def CreateNewEnv():
         project_extra_sources += GetSources('LIBHB_UCDN_sources',
                                             'repo/src/hb-ucdn/Makefile.sources')
 
-    if GetOption('option_have_glib') and FindGlib(env):
+    if GetOption('option_have_glib') and FindGlib(env, conf_dir=env['BUILD_DIR']):
         env.Append(CPPDEFINES=['HAVE_GLIB'])
         project_sources += ['repo/src/hb-glib.cc']
         project_headers += ['repo/src/hb-glib.h']
@@ -224,7 +224,7 @@ def CreateNewEnv():
             test_env.Append(CPPDEFINES=['MAIN'])
         test_env.Append(
             LIBS=['harfbuzz'],
-            LIBPATH=['deploy'])
+            LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_shared'])
 
 
 
@@ -265,7 +265,8 @@ def ConfigureEnv(env):
 
         p.InfoPrint(configureString)
 
-        SCons.Script.Main.progress_display.set_mode(1)
+        # ruins logs so turning it off
+        #SCons.Script.Main.progress_display.set_mode(1)
         
         conf = Configure(env, conf_dir=env['BUILD_DIR'] + "/conf_tests", log_file=env['BUILD_DIR'] + "/conf.log",
                         custom_tests={  
@@ -339,7 +340,8 @@ def ConfigureEnv(env):
         conf.CheckSolarisAtomics()
         conf.CheckIntelAtomicPrimitives()
 
-        SCons.Script.Main.progress_display.set_mode(0)
+        # ruins logs so turning it off
+        #SCons.Script.Main.progress_display.set_mode(0)
 
         env = conf.Finish()
 
@@ -660,12 +662,12 @@ def SetupOptions():
             SetOption('option_have_directwrite', True)
         if sys.platform == 'darwin':
             SetOption('option_have_coretext', True)
-
-    if(not GetOption('option_verbose')):
-        scons_ver = SCons.__version__
-        if int(scons_ver[0]) >= 3:
-            SetOption('silent', 1)
-        SCons.Script.Main.progress_display.set_mode(0)
+    # ruins logs so turning it off
+    #if(not GetOption('option_verbose')):
+        #scons_ver = SCons.__version__
+        #if int(scons_ver[0]) >= 3:
+        #    SetOption('silent', 1)
+        #SCons.Script.Main.progress_display.set_mode(0)
 
 
 CreateNewEnv()

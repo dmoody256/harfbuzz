@@ -1,13 +1,6 @@
 build/
-shared_build/
-Dependencies/include
-Dependencies/lib
-Core/Source/odgl_Shaders.hpp
-Testing/VisualTests/SikuliX/*
+deploy/
 .sconsign.dblite
-build.conf
-*.html
-*.pyc
 
 # Compiled source #
 ###################
@@ -22,6 +15,7 @@ build.conf
 *.a
 *.lib
 *.exp
+*.pyc
 
 !LoadObjTest/LoadObjTest.obj
 
