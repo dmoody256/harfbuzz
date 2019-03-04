@@ -14,7 +14,7 @@ import SCons.Script.Main
 
 from BuildUtils.SconsUtils import SetBuildJobs, SetupBuildEnv, ProgressCounter
 from BuildUtils.ColorPrinter import ColorPrinter
-from BuildUtils.FindPackages import FindFreetype, FindGraphite2, FindGlib
+from BuildUtils.FindPackages import FindFreetype, FindGraphite2, FindGlib, FindIcu
 from BuildUtils.ConfigureChecks import *
 
 
@@ -23,15 +23,73 @@ def CreateNewEnv():
     p = ColorPrinter()
     SetupOptions()
 
+    harfbuzz_options = [
+        'option_have_freetype',
+        'option_have_graphite2',
+        'option_have_glib',
+        'option_have_icu',
+        'option_have_gobject',
+        'option_have_introspection',
+        'option_build_subset',
+        'option_build_tests',
+        'option_build_shared',
+        'option_build_ucdn',
+        'option_build_utils',
+    ]
+
+    if sys.platform == 'win32':
+        harfbuzz_options += [
+            'option_have_uniscribe',
+            'option_have_directwrite',
+        ]
+           
+    if sys.platform == 'darwin':
+        harfbuzz_options += [
+            'option_have_coretext',
+        ]
+
     env = Environment(
         DEBUG_BUILD=GetOption('option_debug'),
         VERBOSE_COMPILE=GetOption('option_verbose'),
+        RECONF=GetOption('option_reconfigure'),
+        HARFBUZZ_CHECK=GetOption('option_check')
     )
+
+    for option in harfbuzz_options:
+        var_name = option.replace('option_', '').upper()
+        env[var_name] = GetOption(option)
+
+    if env['BUILD_UTILS']:
+        env['HAVE_GLIB'] = True
+        env['HAVE_FREETYPE'] = True
+
+    if env['HAVE_GOBJECT']:
+        env['HAVE_GLIB'] = True
+
+    if env['HAVE_INTROSPECTION']:
+        env['HAVE_GOBJECT'] = True
+        env['HAVE_GLIB'] = True
+
+    if env['HARFBUZZ_CHECK']:
+        env['BUILD_SHARED'] = True
+        env['BUILD_UTILS'] = True
+        env['BUILD_UCDN'] = True
+        env['HAVE_ICU'] = True
+        env['HAVE_GLIB'] = True
+        env['HAVE_GOBJECT'] = True
+        env['HAVE_INTROSPECTION'] = True
+        env['HAVE_FREETYPE'] = True
+        env['HAVE_GRAPHITE2'] = True
+        if sys.platform == 'win32':
+            env['HAVE_UNISCRIBE'] = True
+            env['HAVE_DIRECTWRITE'] = True
+        if sys.platform == 'darwin':
+            env['HAVE_CORETEXT'] = True
 
     env['PROJECT_DIR'] = os.path.abspath(Dir('.').abspath).replace('\\', '/')
     env['BUILD_DIR'] = 'build'
-    SetBuildJobs(env)
 
+    SetBuildJobs(env)
     GetHarfbuzzVersion(env)
 
     project_sources = []
@@ -42,17 +100,17 @@ def CreateNewEnv():
     hb_gobject_headers = []
     project_extra_sources = []
     hb_gobject_gen_headers = []
+    subset_project_sources = []
 
-    project_sources += GetSources('HB_BASE_sources',
-                                  'repo/src/Makefile.sources')
-    project_sources += GetSources('HB_BASE_RAGEL_GENERATED_sources',
-                                  'repo/src/Makefile.sources')
-    project_sources += GetSources('HB_FALLBACK_sources',
-                                  'repo/src/Makefile.sources')
-    project_headers += GetSources('HB_BASE_headers',
-                                  'repo/src/Makefile.sources')
+    project_sources += (
+        GetSources('HB_BASE_sources', 'repo/src/Makefile.sources') +
+        GetSources('HB_BASE_RAGEL_GENERATED_sources', 'repo/src/Makefile.sources') +
+        GetSources('HB_FALLBACK_sources', 'repo/src/Makefile.sources') +
+        GetSources('HB_BASE_headers', 'repo/src/Makefile.sources'))
 
-    if GetOption('option_have_freetype'):
+    subset_project_sources += GetSources('HB_SUBSET_sources', 'repo/src/Makefile.sources')
+
+    if env['HAVE_FREETYPE']:
         if not FindFreetype(env, conf_dir=env['BUILD_DIR']):
             p.ErrorPrint(
                 "Requested build with Freetype, but couldn't find it.")
@@ -61,37 +119,37 @@ def CreateNewEnv():
         project_sources += ['repo/src/hb-ft.cc']
         project_headers += ['repo/src/hb-ft.h']
 
-    if GetOption('option_have_graphite2') and FindGraphite2(env, conf_dir=env['BUILD_DIR']):
+    if env['HAVE_GRAPHITE2'] and FindGraphite2(env, conf_dir=env['BUILD_DIR']):
         env.Append(CPPDEFINES=['HAVE_GRAPHITE2'])
         project_sources += ['repo/src/hb-graphite2.cc']
         project_headers += ['repo/src/hb-graphite2.h']
 
-    if GetOption('option_builtin_ucdn'):
+    if env['BUILD_UCDN']:
         env.Append(
             CPPPATH=['repo/src/hb-ucdn'],
             CPPDEFINES=['HAVE_UCDN'])
         project_sources += ['repo/src/hb-ucdn.cc']
         project_extra_sources += GetSources('LIBHB_UCDN_sources',
                                             'repo/src/hb-ucdn/Makefile.sources')
-
-    if GetOption('option_have_glib') and FindGlib(env, conf_dir=env['BUILD_DIR']):
+    
+    if env['HAVE_GLIB'] and FindGlib(env, conf_dir=env['BUILD_DIR']):
         env.Append(CPPDEFINES=['HAVE_GLIB'])
         project_sources += ['repo/src/hb-glib.cc']
         project_headers += ['repo/src/hb-glib.h']
 
-    if GetOption('option_have_icu') and FindIcu(env):
+    if env['HAVE_ICU'] and FindIcu(env, conf_dir=env['BUILD_DIR']):
         env.Append(CPPDEFINES=['HAVE_ICU'])
         project_sources += ['repo/src/hb-icu.cc']
         project_headers += ['repo/src/hb-icu.h']
 
     if sys.platform == 'darwin':
-        if GetOption('option_have_coretext'):
+        if env['HAVE_CORETEXT']:
             env.Append(CPPDEFINES=['HAVE_CORETEXT'])
             project_sources += ['repo/src/hb-coretext.cc']
             project_headers += ['repo/src/hb-coretext.h']
 
     if sys.platform == 'win32':
-        if GetOption('option_have_uniscribe'):
+        if env['HAVE_UNISCRIBE']:
             env.Append(
                 CPPDEFINES=['HAVE_UNISCRIBE'],
                 LIBS=[
@@ -102,7 +160,7 @@ def CreateNewEnv():
             project_sources += ['repo/src/hb-uniscribe.cc']
             project_headers += ['repo/src/hb-uniscribe.h']
 
-        if GetOption('option_have_directwrite'):
+        if env['HAVE_DIRECTWRITE']:
             env.Append(
                 CPPDEFINES=['HAVE_DIRECTWRITE'],
                 LIBS=[
@@ -112,7 +170,8 @@ def CreateNewEnv():
             project_sources += ['repo/src/hb-directwrite.cc']
             project_headers += ['repo/src/hb-directwrite.h']
 
-    if GetOption('option_have_gobject'):
+    if env['HAVE_GOBJECT']:
+
         glibmkenum_path = None
         perl_path = None
         glibmkenum_cmd = None
@@ -138,7 +197,11 @@ def CreateNewEnv():
                     [perl_path, glibmkenum_path, '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 stdout, stderr = process.communicate()
                 if process.returncode == 0:
-                    glibmkenum_cmd = [sys.perl_path, glibmkenum_path]
+                    glibmkenum_cmd = [perl_path, glibmkenum_path]
+        else:
+            p.ErrorPrint(
+                "Requested build with gobjects, but couldn't find glib-mkenums")
+            return
 
         if not glibmkenum_cmd:
             p.ErrorPrint(
@@ -152,29 +215,50 @@ def CreateNewEnv():
             ['repo/src/hb-gobject.h']
         hb_gobject_gen_headers += ['repo/src/hb-gobject-enums.h']
 
-        process = subprocess.Popen(glibmkenum_cmd + ['--template=repo/src/hb-gobject-enums.cc.tmpl', '--identifier-prefix', 'hb_',
+        process = subprocess.Popen(glibmkenum_cmd + ['--template', 'repo/src/hb-gobject-enums.cc.tmpl', '--identifier-prefix', 'hb_',
                                                      '--symbol-prefix', 'hb_gobject'] + hb_gobject_headers + project_headers, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
         stdout, stderr = process.communicate()
         if process.returncode == 0:
             f1 = open('repo/src/hb-gobject-enums.h', 'w')
-            f1.write(stdout.replace('_t_get_type',
+            f1.write(stdout.decode('utf8').replace('_t_get_type',
                                     '_get_type').replace('_T (', ' ('))
             f1.close()
+        if stderr:
+            p.ErrorPrint(
+                "Failed to run glib-mkenums: " + stderr.decode(utf8))
 
-        process = subprocess.Popen(glibmkenum_cmd + ['--template=repo/src/hb-gobject-enums.cc.tmpl', '--identifier-prefix', 'hb_',
+        process = subprocess.Popen(glibmkenum_cmd + ['--template', 'repo/src/hb-gobject-enums.cc.tmpl', '--identifier-prefix', 'hb_',
                                                      '--symbol-prefix', 'hb_gobject'] + hb_gobject_headers + project_headers, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         stdout, stderr = process.communicate()
         if process.returncode == 0:
             f1 = open('repo/src/hb-gobject-enums.cc', 'w')
-            f1.write(stdout.replace('_t_get_type',
+            f1.write(stdout.decode('utf8').replace('_t_get_type',
                                     '_get_type').replace('_T (', ' ('))
             f1.close()
+        if stderr:
+            p.ErrorPrint(
+                "Failed to run glib-mkenums: " + stderr.decode(utf8))
 
-    if GetOption('option_build_shared'):
+    if env['BUILD_SHARED']:
         if sys.platform == 'win32':
             env.Append(CPPDEFINES=['HB_DLL_EXPORT'])
 
     ConfigureEnv(env)
+
+    if (env['HAVE_BSYMBOLIC'] and
+        (sys.platform != 'win32' or 
+        (env.Detect('gcc') and sys.platform == 'win32'))):
+
+        env.Append(
+            LINKFLAGS=['-Bsymbolic-functions'],
+            CCFLAGS=[
+                '-fno-rtti', 
+                '-fno-exceptions'
+            ],
+        )
+
+
 
     progress = ProgressCounter()
 
@@ -182,15 +266,17 @@ def CreateNewEnv():
         source for source in project_sources if source.endswith(".cc")]
     project_extra_sources = [
         source for source in project_extra_sources if source.endswith(".c")]
-
+    subset_project_sources = [
+        source for source in subset_project_sources if source.endswith(".cc")]
+    
     static_env, harf_static = SetupBuildEnv(
         env,
         progress,
         'static',
-        'harfbuzz_static',
+        'harfbuzz',
         project_sources + project_extra_sources,
         env['BUILD_DIR'] + '/build_static',
-        'deploy')
+        'deploy_static')
 
     shared_env, harf_shared = SetupBuildEnv(
         env,
@@ -200,6 +286,36 @@ def CreateNewEnv():
         project_sources + project_extra_sources,
         env['BUILD_DIR'] + '/build_shared',
         'deploy')
+
+    subset_shared_env, subset_shared = SetupBuildEnv(
+        env,
+        progress,
+        'shared',
+        'harfbuzz-subset',
+        subset_project_sources,
+        env['BUILD_DIR'] + '/subset_shared',
+        'deploy')
+
+    subset_shared_env.Append(
+        LIBS=['harfbuzz'],
+        LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_shared'])
+
+    if sys.platform != 'win32':
+        subset_shared_env.Append(
+            CCFLAGS=['-fvisibility-inlines-hidden'])
+
+    subset_static_env, subset_static = SetupBuildEnv(
+        env,
+        progress,
+        'static',
+        'harfbuzz-subset',
+        subset_project_sources,
+        env['BUILD_DIR'] + '/subset_static',
+        'deploy_static')
+
+    subset_static_env.Append(
+        LIBS=['harfbuzz'],
+        LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_static'])
 
     tests = [
         'main',
@@ -237,7 +353,7 @@ def ConfigureEnv(env):
 
     if not env.GetOption('clean'):
 
-        if(GetOption('option_reconfigure')):
+        if env['RECONF']:
             os.remove(env['BUILD_DIR'] + '/build.conf')
 
         vars = Variables(env['BUILD_DIR'] + '/build.conf')
@@ -280,13 +396,19 @@ def ConfigureEnv(env):
                             'CheckSolarisAtomics': CheckSolarisAtomics,
                             'CheckIntelAtomicPrimitives': CheckIntelAtomicPrimitives,
                             'CheckFunc' : CheckFunc,
-                            'CheckHeader' : CheckHeader
+                            'CheckHeader' : CheckHeader,
+                            'CheckBSymbolic' : CheckBSymbolic
                         })
      
         # with open('repo/zconf.h.in', 'r') as content_file:
         #    conf.env["ZCONFH"] = str(content_file.read())
 
         conf.CheckSharedLibrary()
+
+        if conf.CheckBSymbolic():
+            env['HAVE_BSYMBOLIC'] = True
+        else:
+            env['HAVE_BSYMBOLIC'] = False
 
         checks_funcs = [
             'atexit',
@@ -492,7 +614,7 @@ def SetupOptions():
 
     AddOption(
         '--no-builtin-ucdn',
-        dest='option_builtin_ucdn',
+        dest='option_build_ucdn',
         action='store_false',
         metavar='BOOL',
         default=True,
@@ -636,32 +758,7 @@ def SetupOptions():
             help='Enable CoreText shaper backend on macOS'
         )
 
-    if GetOption('option_build_utils'):
-        SetOption('option_have_glib', True)
-        SetOption('option_have_freetype', True)
-
-    if GetOption('option_have_gobject'):
-        SetOption('option_have_glib', True)
-
-    if GetOption('option_have_introspection'):
-        SetOption('option_have_gobject', True)
-        SetOption('option_have_glib', True)
-
-    if GetOption('option_check'):
-        SetOption('option_build_shared', True)
-        SetOption('option_build_utils', True)
-        SetOption('option_builtin_ucdn', True)
-        SetOption('option_have_icu', True)
-        SetOption('option_have_glib', True)
-        SetOption('option_have_gobject', True)
-        SetOption('option_have_introspection', True)
-        SetOption('option_have_freetype', True)
-        SetOption('option_have_graphite2', True)
-        if sys.platform == 'win32':
-            SetOption('option_have_uniscribe', True)
-            SetOption('option_have_directwrite', True)
-        if sys.platform == 'darwin':
-            SetOption('option_have_coretext', True)
+   
     # ruins logs so turning it off
     #if(not GetOption('option_verbose')):
         #scons_ver = SCons.__version__
