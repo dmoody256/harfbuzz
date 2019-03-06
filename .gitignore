@@ -1,5 +1,5 @@
 build/
-deploy/
+install/
 .sconsign.dblite
 
 # Compiled source #

@@ -19,7 +19,7 @@ from BuildUtils.ConfigureChecks import *
 
 
 def CreateNewEnv():
-
+    
     p = ColorPrinter()
     SetupOptions()
 
@@ -88,6 +88,7 @@ def CreateNewEnv():
 
     env['PROJECT_DIR'] = os.path.abspath(Dir('.').abspath).replace('\\', '/')
     env['BUILD_DIR'] = 'build'
+    env.Execute(Mkdir('build'))
 
     SetBuildJobs(env)
     GetHarfbuzzVersion(env)
@@ -95,20 +96,35 @@ def CreateNewEnv():
     project_sources = []
     project_headers = []
     gobject_sources = []
+    gobject_headers = []
     gobject_gen_sources = []
-    hb_gobject_structs_headers = []
-    hb_gobject_headers = []
+    gobject_gen_headers = []
+    gobject_structs_headers = []
     project_extra_sources = []
-    hb_gobject_gen_headers = []
+    project_extra_headers = []
     subset_project_sources = []
+    subset_project_headers = []
+    
 
-    project_sources += (
+    sources = (
         GetSources('HB_BASE_sources', 'repo/src/Makefile.sources') +
         GetSources('HB_BASE_RAGEL_GENERATED_sources', 'repo/src/Makefile.sources') +
         GetSources('HB_FALLBACK_sources', 'repo/src/Makefile.sources') +
         GetSources('HB_BASE_headers', 'repo/src/Makefile.sources'))
 
-    subset_project_sources += GetSources('HB_SUBSET_sources', 'repo/src/Makefile.sources')
+    SortSources(
+        project_sources, 
+        project_headers, 
+        sources
+    )
+
+    SortSources(
+        subset_project_sources, 
+        subset_project_headers, 
+        GetSources('HB_SUBSET_sources', 'repo/src/Makefile.sources')
+    )
+    
+    ConfigureEnv(env)
 
     if env['HAVE_FREETYPE']:
         if not FindFreetype(env, conf_dir=env['BUILD_DIR']):
@@ -129,8 +145,11 @@ def CreateNewEnv():
             CPPPATH=['repo/src/hb-ucdn'],
             CPPDEFINES=['HAVE_UCDN'])
         project_sources += ['repo/src/hb-ucdn.cc']
-        project_extra_sources += GetSources('LIBHB_UCDN_sources',
-                                            'repo/src/hb-ucdn/Makefile.sources')
+        SortSources(
+            project_extra_sources, 
+            project_extra_headers,
+            GetSources('LIBHB_UCDN_sources', 'repo/src/hb-ucdn/Makefile.sources')
+        )
     
     if env['HAVE_GLIB'] and FindGlib(env, conf_dir=env['BUILD_DIR']):
         env.Append(CPPDEFINES=['HAVE_GLIB'])
@@ -169,7 +188,8 @@ def CreateNewEnv():
                 ])
             project_sources += ['repo/src/hb-directwrite.cc']
             project_headers += ['repo/src/hb-directwrite.h']
-
+    headercom = None
+    sourcecom = None
     if env['HAVE_GOBJECT']:
 
         glibmkenum_path = None
@@ -181,8 +201,8 @@ def CreateNewEnv():
             bin_ext = ".exe"
 
         for path in os.environ["PATH"].split(os.pathsep):
-            if os.access(os.path.join(path, 'glib-mkenums' + bin_ext), os.X_OK):
-                glibmkenum_path = os.path.join(path, 'glib-mkenums' + bin_ext)
+            if os.access(os.path.join(path, 'glib-mkenums'), os.X_OK):
+                glibmkenum_path = os.path.join(path, 'glib-mkenums')
             if os.access(os.path.join(path, 'perl' + bin_ext), os.X_OK):
                 perl_path = os.path.join(path, 'perl' + bin_ext)
 
@@ -210,112 +230,215 @@ def CreateNewEnv():
 
         gobject_sources += ['repo/src/hb-gobject-structs.cc']
         gobject_gen_sources += ['repo/src/hb-gobject-enums.cc']
-        hb_gobject_structs_headers += ['repo/src/hb-gobject-structs.h']
-        hb_gobject_headers += hb_gobject_structs_headers + \
+        gobject_structs_headers += ['repo/src/hb-gobject-structs.h']
+        gobject_headers += gobject_structs_headers + \
             ['repo/src/hb-gobject.h']
-        hb_gobject_gen_headers += ['repo/src/hb-gobject-enums.h']
+        gobject_gen_headers += ['repo/src/hb-gobject-enums.h']
 
-        process = subprocess.Popen(glibmkenum_cmd + ['--template', 'repo/src/hb-gobject-enums.cc.tmpl', '--identifier-prefix', 'hb_',
-                                                     '--symbol-prefix', 'hb_gobject'] + hb_gobject_headers + project_headers, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        def replace_enums(env, target, source):
+            header_target = os.path.basename(target[0].abspath)
+            if header_target.endswith(".h"):
+                f1 = open('repo/src/' + os.path.basename(target[0].abspath), 'w')
+                f2 = open('repo/src/' + os.path.basename(target[0].abspath), 'r')
+            else:
+                f1 = open(target[0].abspath, 'w')
+                f2 = open(target[0].abspath, 'r')
+            contents = f2.read().replace('_t_get_type', '_get_type').replace('_T (', ' (')
+            f2.close()
+            f1.write(contents)
+            f1.close()
+
+
+        cmd = ' '.join(glibmkenum_cmd + [
+            '--template', 'repo/src/${TARGET.file}.tmpl', 
+            '--identifier-prefix', 'hb_',
+            '--symbol-prefix', 'hb_gobject']) + " $SOURCES > $TARGET"
         
-        stdout, stderr = process.communicate()
-        if process.returncode == 0:
-            f1 = open('repo/src/hb-gobject-enums.h', 'w')
-            f1.write(stdout.decode('utf8').replace('_t_get_type',
-                                    '_get_type').replace('_T (', ' ('))
-            f1.close()
-        if stderr:
-            p.ErrorPrint(
-                "Failed to run glib-mkenums: " + stderr.decode(utf8))
+        def generate_gobjects_header(env, target, source):
+            process = subprocess.Popen(glibmkenum_cmd + ['--template', 'repo/src/hb-gobject-enums.h.tmpl', '--identifier-prefix', 'hb_',
+                                                            '--symbol-prefix', 'hb_gobject'] + gobject_structs_headers + project_headers, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+            if process.returncode == 0:
+                f1 = open('repo/src/hb-gobject-enums.h', 'w')
+                f1.write(stdout.decode('utf8').replace('_t_get_type',
+                                        '_get_type').replace('_T (', ' ('))
+                f1.close()
+            if stderr:
+                p.ErrorPrint(
+                    "Failed to run glib-mkenums: " + stderr.decode(utf8))
 
-        process = subprocess.Popen(glibmkenum_cmd + ['--template', 'repo/src/hb-gobject-enums.cc.tmpl', '--identifier-prefix', 'hb_',
-                                                     '--symbol-prefix', 'hb_gobject'] + hb_gobject_headers + project_headers, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = process.communicate()
-        if process.returncode == 0:
-            f1 = open('repo/src/hb-gobject-enums.cc', 'w')
-            f1.write(stdout.decode('utf8').replace('_t_get_type',
-                                    '_get_type').replace('_T (', ' ('))
-            f1.close()
-        if stderr:
-            p.ErrorPrint(
-                "Failed to run glib-mkenums: " + stderr.decode(utf8))
+        def generate_gobjects_source(env, target, source):
+            process = subprocess.Popen(glibmkenum_cmd + ['--template', 'repo/src/hb-gobject-enums.cc.tmpl', '--identifier-prefix', 'hb_',
+                                                            '--symbol-prefix', 'hb_gobject'] + gobject_headers + project_headers, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            stdout, stderr = process.communicate()
+            if process.returncode == 0:
+                f1 = open('repo/src/hb-gobject-enums.cc', 'w')
+                f1.write(stdout.decode('utf8').replace('_t_get_type',
+                                        '_get_type').replace('_T (', ' ('))
+                f1.close()
+            if stderr:
+                p.ErrorPrint(
+                    "Failed to run glib-mkenums: " + stderr.decode(utf8))
+
+
+        # create emitter that says that any target (.vds) depends on our mk_vds program
+        def glib_mkenums_emitter(target, source, env):
+            source = [file for file in source if not file.abspath.endswith('.tmpl')]
+            #target = 'repo/src/' + os.path.basename(target[0].abspath)
+            return (target, source)
+
+        # create a builder (that uses the emitter) to build .vds files from .txt files
+        # The use of abspath is so that mk_vds's directory doesn't have to be added to the shell path.
+        bld_header = Builder(action = [SCons.Action.CommandAction(cmd), SCons.Action.FunctionAction(replace_enums, {})],
+                    emitter = glib_mkenums_emitter,
+                    suffix = '.h', src_suffix = '.tmpl')
+        bld_source = Builder(action = [SCons.Action.CommandAction(cmd), SCons.Action.FunctionAction(replace_enums, {})],
+                    emitter = glib_mkenums_emitter,
+                    suffix = '.cc', src_suffix = '.tmpl')
+
+        # add the new Builder to the list of builders
+        env['BUILDERS']['glib_mkenums_headers'] = bld_header
+        env['BUILDERS']['glib_mkenums_sources'] = bld_source
+        # generate foo.vds from foo.txt using mk_vds
+        def generate_header(s, target, source, env):
+            if not env['GLIBMKENUMS_HEADERS_DONE']:
+                p.InfoPrint(" Generating glib-mkenums headers...")
+                env['GLIBMKENUMS_HEADERS_DONE'] = True
+        env.glib_mkenums_headers(
+            'repo/src/hb-gobject-enums.h', 
+            ['repo/src/hb-gobject-enums.h.tmpl'] + gobject_structs_headers + project_headers, 
+            PRINT_CMD_LINE_FUNC=generate_header, 
+            GLIBMKENUMS_HEADERS_DONE=False )
+                
+      
 
     if env['BUILD_SHARED']:
-        if sys.platform == 'win32':
+        if env['CC'] == 'cl':
             env.Append(CPPDEFINES=['HB_DLL_EXPORT'])
 
-    ConfigureEnv(env)
+    if (sys.platform != 'win32' or 
+        (env.Detect('gcc') and sys.platform == 'win32')):
+        if env['HAVE_BSYMBOLIC']:
+            env.Append(
+                LINKFLAGS=['-Bsymbolic-functions']
+            )
+        if env['CC'] == 'gcc' or env['CC'] == 'clang':
+            env.Append(
+                CCFLAGS=[
+                    '-fno-rtti', 
+                    '-fno-exceptions',
+                    '-fno-threadsafe-statics'
+                ],
+                LIBS=['m']
+            )
+        if env['HAVE_CPP11']:
+            env.Append(CCFLAGS=['-std=c++11'])
 
-    if (env['HAVE_BSYMBOLIC'] and
-        (sys.platform != 'win32' or 
-        (env.Detect('gcc') and sys.platform == 'win32'))):
+    if sys.platform == 'win32' and not env['BUILD_SHARED']:
+        env['HAVE_INTROSPECTION'] = False
 
-        env.Append(
-            LINKFLAGS=['-Bsymbolic-functions'],
-            CCFLAGS=[
-                '-fno-rtti', 
-                '-fno-exceptions'
-            ],
-        )
+    if env['HAVE_INTROSPECTION']:
+        gircompiler_path = None
+        girscanner_path = None
+        for path in os.environ["PATH"].split(os.pathsep):
+            if os.access(os.path.join(path, 'g-ir-scanner'), os.X_OK):
+                girscanner_path = os.path.join(path, 'g-ir-scanner')
+            if os.access(os.path.join(path, 'g-ir-compiler'), os.X_OK):
+                gircompiler_path = os.path.join(path, 'g-ir-compiler')
+        introspection = (
+            project_headers + 
+            project_sources + 
+            gobject_gen_sources + 
+            gobject_gen_headers +
+            gobject_sources +
+            gobject_headers)
 
+        for file in introspection:
+            f1 = open('repo/src/hb_gir_list', 'w')
+            f1.write(file + '\n')
+            f1.close()
 
+        
+    def generate_source(s, target, source, env):
+        if not env['GLIBMKENUMS_SOURCE_DONE']:
+            p.InfoPrint(" Generating glib-mkenums sources...")
+            env['GLIBMKENUMS_SOURCE_DONE'] = True
+    
 
     progress = ProgressCounter()
-
-    project_sources = [
-        source for source in project_sources if source.endswith(".cc")]
-    project_extra_sources = [
-        source for source in project_extra_sources if source.endswith(".c")]
-    subset_project_sources = [
-        source for source in subset_project_sources if source.endswith(".cc")]
+    env.Append(CPPPATH='repo/src')
     
-    static_env, harf_static = SetupBuildEnv(
-        env,
-        progress,
-        'static',
-        'harfbuzz',
-        project_sources + project_extra_sources,
-        env['BUILD_DIR'] + '/build_static',
-        'deploy_static')
+    libraries = [{
+        'name':'harfbuzz',
+        'source': project_sources + project_extra_sources,
+        'depends': None
+    }]
 
-    shared_env, harf_shared = SetupBuildEnv(
-        env,
-        progress,
-        'shared',
-        'harfbuzz',
-        project_sources + project_extra_sources,
-        env['BUILD_DIR'] + '/build_shared',
-        'deploy')
+    if env['BUILD_SUBSET']:
+        subset_project_sources = [
+            source for source in subset_project_sources if source.endswith(".cc")]
+        libraries.append({
+            'name':'harfbuzz-subset',
+            'source': subset_project_sources,
+            'depends': 'harfbuzz'
+        })
 
-    subset_shared_env, subset_shared = SetupBuildEnv(
-        env,
-        progress,
-        'shared',
-        'harfbuzz-subset',
-        subset_project_sources,
-        env['BUILD_DIR'] + '/subset_shared',
-        'deploy')
+    if env['HAVE_GOBJECT']: 
+        libraries.append({
+            'name':'harfbuzz-gobject',
+            'source':gobject_sources + gobject_gen_sources,
+            'depends': 'harfbuzz'
+        })
+       
+    for lib in libraries:
+        static_env, static_lib = SetupBuildEnv(
+            env,
+            progress,
+            'static',
+            lib['name'],
+            lib['source'],
+            env['BUILD_DIR'] + '/build_' + lib['name'] + '_static',
+            'install/static')
+        
+        if lib['depends']:
+            static_env.Append(
+                LIBS=[lib['depends']],
+                LIBPATH=[env['PROJECT_DIR'] + '/' + static_env['BUILD_DIR'] + '/build_' + lib['depends'] + '_static'])
+        if lib['name'] == 'harfbuzz-gobject':
+            static_env.glib_mkenums_sources(
+                static_env['BUILD_DIR'] + '/build_' + lib['name'] + '_static/repo/src/hb-gobject-enums.cc', 
+                ['repo/src/hb-gobject-enums.cc.tmpl'] + gobject_headers + project_headers, 
+                PRINT_CMD_LINE_FUNC=generate_source,
+                GLIBMKENUMS_SOURCE_DONE=False)
 
-    subset_shared_env.Append(
-        LIBS=['harfbuzz'],
-        LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_shared'])
+        
+        if env['BUILD_SHARED']:
 
-    if sys.platform != 'win32':
-        subset_shared_env.Append(
-            CCFLAGS=['-fvisibility-inlines-hidden'])
+            shared_env, shared_lib = SetupBuildEnv(
+                env,
+                progress,
+                'shared',
+                lib['name'],
+                lib['source'],
+                env['BUILD_DIR'] + '/build_' + lib['name'] + '_shared',
+                'install/shared')
 
-    subset_static_env, subset_static = SetupBuildEnv(
-        env,
-        progress,
-        'static',
-        'harfbuzz-subset',
-        subset_project_sources,
-        env['BUILD_DIR'] + '/subset_static',
-        'deploy_static')
+            if lib['name'] == 'harfbuzz-gobject':
+                shared_env.glib_mkenums_sources(
+                    shared_env['BUILD_DIR'] + '/build_' + lib['name'] + '_shared/repo/src/hb-gobject-enums.cc',  
+                    ['repo/src/hb-gobject-enums.cc.tmpl'] + gobject_headers + project_headers, 
+                    PRINT_CMD_LINE_FUNC=generate_source,
+                    GLIBMKENUMS_SOURCE_DONE=False)
 
-    subset_static_env.Append(
-        LIBS=['harfbuzz'],
-        LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_static'])
+           
+            if env['CC'] != 'cl':
+                shared_env.Append(
+                    CCFLAGS=['-fvisibility-inlines-hidden'])
+
+            if lib['depends']:
+                shared_env.Append(
+                    LIBS=[lib['depends']],
+                    LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_' + lib['depends'] + '_shared'])
 
     tests = [
         'main',
@@ -335,12 +458,12 @@ def CreateNewEnv():
             test,
             ['repo/src/' + test + ".cc"],
             env['BUILD_DIR'] + '/tests',
-            'deploy')
+            'install/bin')
         if test == 'hb-ot-tag':
             test_env.Append(CPPDEFINES=['MAIN'])
         test_env.Append(
             LIBS=['harfbuzz'],
-            LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_shared'])
+            LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_harfbuzz_shared'])
 
 
 
@@ -397,7 +520,8 @@ def ConfigureEnv(env):
                             'CheckIntelAtomicPrimitives': CheckIntelAtomicPrimitives,
                             'CheckFunc' : CheckFunc,
                             'CheckHeader' : CheckHeader,
-                            'CheckBSymbolic' : CheckBSymbolic
+                            'CheckBSymbolic' : CheckBSymbolic,
+                            'CheckStdCpp11' : CheckStdCpp11
                         })
      
         # with open('repo/zconf.h.in', 'r') as content_file:
@@ -405,10 +529,8 @@ def ConfigureEnv(env):
 
         conf.CheckSharedLibrary()
 
-        if conf.CheckBSymbolic():
-            env['HAVE_BSYMBOLIC'] = True
-        else:
-            env['HAVE_BSYMBOLIC'] = False
+        env['HAVE_BSYMBOLIC'] = conf.CheckBSymbolic()
+        env['HAVE_CPP11'] = conf.CheckStdCpp11()
 
         checks_funcs = [
             'atexit',
@@ -576,6 +698,15 @@ def GetSources(var, file):
         sources = [os.path.dirname(file) + '/' + line for line in sources]
         return sources
 
+
+def SortSources(source_list, header_list, mix_list):
+    for source in mix_list:
+        if source.endswith(".cc") or source.endswith(".c"):
+            source_list.append(source)
+        elif source.endswith(".hh") or source.endswith(".h"):
+            header_list.append(source)
+        else:
+            p.ErrorPrint("Unhandled source: " + source)
 
 def GetHarfbuzzVersion(env=None):
     with open('repo/configure.ac') as f:
