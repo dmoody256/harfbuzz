@@ -23,19 +23,22 @@ install:
   - gem install coveralls-lcov
   - sudo -H python -m pip install -U pip setuptools wheel
   - sudo -H python -m pip install -U scons
+  - sudo apt-get install gcc g++ libfreetype6-dev libglib2.0-dev libcairo2-dev
+  - sudo apt-get install autoconf automake libtool pkg-config ragel gtk-doc-tools
+  - sudo apt-get install libicu-dev icu-devtools libgraphite2-dev libgirepository1.0-dev dbus 
 
 before_script:
   - cd ${TRAVIS_BUILD_DIR}
-  - lcov --directory . --zerocounters
+  #- lcov --directory . --zerocounters
 
 script:
   - cd ${TRAVIS_BUILD_DIR}
-  - scons --cover
-  - ./build/infcover
+  - scons --have-freetype --have-graphite2 --have-glib --have-icu --have-gobject --have-introspection
+  #- ./build/infcover
 
 after_success:
 - cd ${TRAVIS_BUILD_DIR}
-- lcov --directory . --capture --output-file coverage.info # capture coverage info
-- lcov --remove coverage.info 'tests/*' '/usr/*' --output-file coverage.info # filter out system and test code
-- lcov --list coverage.info # debug before upload
-- coveralls-lcov --repo-token ${COVERALLS_TOKEN} coverage.info # uploads to coveralls
+#- lcov --directory . --capture --output-file coverage.info # capture coverage info
+#- lcov --remove coverage.info 'tests/*' '/usr/*' --output-file coverage.info # filter out system and test code
+#- lcov --list coverage.info # debug before upload
+#- coveralls-lcov --repo-token ${COVERALLS_TOKEN} coverage.info # uploads to coveralls
