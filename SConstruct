@@ -248,69 +248,48 @@ def CreateNewEnv():
             f1.write(contents)
             f1.close()
 
-
         cmd = ' '.join(glibmkenum_cmd + [
             '--template', 'repo/src/${TARGET.file}.tmpl', 
             '--identifier-prefix', 'hb_',
             '--symbol-prefix', 'hb_gobject']) + " $SOURCES > $TARGET"
-        
-        def generate_gobjects_header(env, target, source):
-            process = subprocess.Popen(glibmkenum_cmd + ['--template', 'repo/src/hb-gobject-enums.h.tmpl', '--identifier-prefix', 'hb_',
-                                                            '--symbol-prefix', 'hb_gobject'] + gobject_structs_headers + project_headers, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate()
-            if process.returncode == 0:
-                f1 = open('repo/src/hb-gobject-enums.h', 'w')
-                f1.write(stdout.decode('utf8').replace('_t_get_type',
-                                        '_get_type').replace('_T (', ' ('))
-                f1.close()
-            if stderr:
-                p.ErrorPrint(
-                    "Failed to run glib-mkenums: " + stderr.decode(utf8))
 
-        def generate_gobjects_source(env, target, source):
-            process = subprocess.Popen(glibmkenum_cmd + ['--template', 'repo/src/hb-gobject-enums.cc.tmpl', '--identifier-prefix', 'hb_',
-                                                            '--symbol-prefix', 'hb_gobject'] + gobject_headers + project_headers, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate()
-            if process.returncode == 0:
-                f1 = open('repo/src/hb-gobject-enums.cc', 'w')
-                f1.write(stdout.decode('utf8').replace('_t_get_type',
-                                        '_get_type').replace('_T (', ' ('))
-                f1.close()
-            if stderr:
-                p.ErrorPrint(
-                    "Failed to run glib-mkenums: " + stderr.decode(utf8))
-
-
-        # create emitter that says that any target (.vds) depends on our mk_vds program
         def glib_mkenums_emitter(target, source, env):
             source = [file for file in source if not file.abspath.endswith('.tmpl')]
-            #target = 'repo/src/' + os.path.basename(target[0].abspath)
+            target_file = 'repo/src/' + os.path.basename(target[0].abspath)
+            # hacky: https://github.com/SCons/scons/issues/2908
+            Depends(env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/' + target_file, target_file)
+            Depends(env['BUILD_DIR'] + '/build_harfbuzz-gobject_static/' + target_file, target_file)
             return (target, source)
 
-        # create a builder (that uses the emitter) to build .vds files from .txt files
-        # The use of abspath is so that mk_vds's directory doesn't have to be added to the shell path.
-        bld_header = Builder(action = [SCons.Action.CommandAction(cmd), SCons.Action.FunctionAction(replace_enums, {})],
-                    emitter = glib_mkenums_emitter,
-                    suffix = '.h', src_suffix = '.tmpl')
-        bld_source = Builder(action = [SCons.Action.CommandAction(cmd), SCons.Action.FunctionAction(replace_enums, {})],
-                    emitter = glib_mkenums_emitter,
-                    suffix = '.cc', src_suffix = '.tmpl')
+        env['BUILDERS']['glib_mkenums_headers'] = Builder(
+            action = [SCons.Action.CommandAction(cmd), SCons.Action.FunctionAction(replace_enums, {})],
+            emitter = glib_mkenums_emitter,
+            suffix = '.h', src_suffix = '.tmpl')
+        env['BUILDERS']['glib_mkenums_sources'] = Builder(
+            action = [SCons.Action.CommandAction(cmd), SCons.Action.FunctionAction(replace_enums, {})],
+            emitter = glib_mkenums_emitter,
+            suffix = '.cc', src_suffix = '.tmpl')
 
-        # add the new Builder to the list of builders
-        env['BUILDERS']['glib_mkenums_headers'] = bld_header
-        env['BUILDERS']['glib_mkenums_sources'] = bld_source
-        # generate foo.vds from foo.txt using mk_vds
         def generate_header(s, target, source, env):
             if not env['GLIBMKENUMS_HEADERS_DONE']:
                 p.InfoPrint(" Generating glib-mkenums headers...")
                 env['GLIBMKENUMS_HEADERS_DONE'] = True
+        def generate_source(s, target, source, env):
+            if not env['GLIBMKENUMS_SOURCE_DONE']:
+                p.InfoPrint(" Generating glib-mkenums sources...")
+                env['GLIBMKENUMS_SOURCE_DONE'] = True
+
         env.glib_mkenums_headers(
             'repo/src/hb-gobject-enums.h', 
             ['repo/src/hb-gobject-enums.h.tmpl'] + gobject_structs_headers + project_headers, 
             PRINT_CMD_LINE_FUNC=generate_header, 
             GLIBMKENUMS_HEADERS_DONE=False )
-                
-      
+
+        env.glib_mkenums_sources(
+            'repo/src/hb-gobject-enums.cc',  
+            ['repo/src/hb-gobject-enums.cc.tmpl'] + gobject_headers + project_headers, 
+            PRINT_CMD_LINE_FUNC=generate_source,
+            GLIBMKENUMS_SOURCE_DONE=False) 
 
     if env['BUILD_SHARED']:
         if env['CC'] == 'cl':
@@ -345,6 +324,13 @@ def CreateNewEnv():
                 girscanner_path = os.path.join(path, 'g-ir-scanner')
             if os.access(os.path.join(path, 'g-ir-compiler'), os.X_OK):
                 gircompiler_path = os.path.join(path, 'g-ir-compiler')
+
+        if not girscanner_path:
+            p.ErrorPrint("Can't build introspection because no g-ir-scanner in path.")
+
+        if not gircompiler_path:
+            p.ErrorPrint("Can't build introspection because no g-ir-compiler in path.")
+
         introspection = (
             project_headers + 
             project_sources + 
@@ -353,17 +339,105 @@ def CreateNewEnv():
             gobject_sources +
             gobject_headers)
 
-        for file in introspection:
+        def write_introspection_list(target, source, env):
+            contents = ""
+            for file in source:
+                contents += file.path + '\n'
             f1 = open('repo/src/hb_gir_list', 'w')
-            f1.write(file + '\n')
+            f1.write(contents)
             f1.close()
 
+        def generate_introspection_list(s, target, source, env):
+            p.InfoPrint(" Generating Introspection list...")
+
+        env.Command(
+            'repo/src/hb_gir_list', 
+            introspection, 
+            write_introspection_list,
+            PRINT_CMD_LINE_FUNC=generate_introspection_list
+            )
+
+        scanner_cmd_str= [
+            girscanner_path,
+            '--warn-all', '--no-libtool', '--verbose',
+            '-n', 'hb',
+            '--namespace=HarfBuzz',
+            '--nsversion=0.0',
+            '--identifier-prefix=hb_',
+            '--include', 'GObject-2.0',
+            '--pkg-export=harfbuzz',
+            '--cflags-begin'
+        ]
+
+        scanner_cmd_str += env['CCFLAGS']
+        scanner_cmd_str += [ '-I' + include for include in env['CPPPATH']]
+        scanner_cmd_str += ['-Irepo/src']
+
+        for define in env['CPPDEFINES']:
+            if type(define) is list or type(define) is tuple:
+                scanner_cmd_str += [ '-D' + define[0] + '=' + define[1]]
+            else:
+                scanner_cmd_str += [ '-D' + define ]
+
+        scanner_cmd_str += [
+            '-DHB_H',
+            '-DHB_H_IN',
+            '-DHB_OT_H',
+            '-DHB_OT_H_IN',
+            '-DHB_AAT_H',
+            '-DHB_AAT_H_IN',
+            '-DHB_GOBJECT_H',
+            '-DHB_GOBJECT_H_IN',
+            '-DHB_EXTERN=',
+            '--cflags-end',
+            '--library=harfbuzz-gobject',
+            '--library=harfbuzz'
+        ]
+
+        # --extra-library not supported option?
+        #scanner_cmd_str += [ '--extra-library=' + flag for flag in env['LIBS'] if not flag.startswith('harfbuzz')]
         
-    def generate_source(s, target, source, env):
-        if not env['GLIBMKENUMS_SOURCE_DONE']:
-            p.InfoPrint(" Generating glib-mkenums sources...")
-            env['GLIBMKENUMS_SOURCE_DONE'] = True
-    
+        scanner_cmd_str += [
+            '-L' + env['PROJECT_DIR'] + '/install/shared', 
+            '--filelist', 
+            'repo/src/hb_gir_list',
+            '-o', 'install/shared/HarfBuzz-0.0.gir',
+            '>', env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/girscanner.txt', '2>&1']
+
+        def run_introspection_scanner(s, target, source, env):
+            f1 = open(env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/girscanner_command.txt', 'w')
+            f1.write(s)
+            f1.close()
+            p.InfoPrint(" Generating Introspection gir...")
+
+        env.Command(
+            'install/shared/HarfBuzz-0.0.gir', 
+            'repo/src/hb_gir_list', 
+            ' '.join(scanner_cmd_str),
+            PRINT_CMD_LINE_FUNC=run_introspection_scanner
+        )
+
+        def run_introspection_compiler(s, target, source, env):
+            f1 = open(env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/gircompiler_command.txt', 'w')
+            f1.write(s)
+            f1.close()
+            p.InfoPrint(" Compiling Introspection typelib...")
+
+        compiler_cmd_str = [
+            gircompiler_path,
+            '--verbose', '--debug',
+            '--includedir', 'repo/src',
+            'install/shared/HarfBuzz-0.0.gir',
+            '-o', 'install/shared/HarfBuzz-0.0.typelib',
+            '>', env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/gircompiler.txt', '2>&1'
+        ]
+
+        env.Command(
+            'install/shared/HarfBuzz-0.0.typelib', 
+            'install/shared/HarfBuzz-0.0.gir', 
+            ' '.join(compiler_cmd_str),
+            PRINT_CMD_LINE_FUNC=run_introspection_compiler
+        )
 
     progress = ProgressCounter()
     env.Append(CPPPATH='repo/src')
@@ -371,7 +445,6 @@ def CreateNewEnv():
     libraries = [{
         'name':'harfbuzz',
         'source': project_sources + project_extra_sources,
-        'depends': None
     }]
 
     if env['BUILD_SUBSET']:
@@ -400,20 +473,12 @@ def CreateNewEnv():
             env['BUILD_DIR'] + '/build_' + lib['name'] + '_static',
             'install/static')
         
-        if lib['depends']:
+        if lib.get('depends'):
             static_env.Append(
                 LIBS=[lib['depends']],
                 LIBPATH=[env['PROJECT_DIR'] + '/' + static_env['BUILD_DIR'] + '/build_' + lib['depends'] + '_static'])
-        if lib['name'] == 'harfbuzz-gobject':
-            static_env.glib_mkenums_sources(
-                static_env['BUILD_DIR'] + '/build_' + lib['name'] + '_static/repo/src/hb-gobject-enums.cc', 
-                ['repo/src/hb-gobject-enums.cc.tmpl'] + gobject_headers + project_headers, 
-                PRINT_CMD_LINE_FUNC=generate_source,
-                GLIBMKENUMS_SOURCE_DONE=False)
-
         
         if env['BUILD_SHARED']:
-
             shared_env, shared_lib = SetupBuildEnv(
                 env,
                 progress,
@@ -423,19 +488,11 @@ def CreateNewEnv():
                 env['BUILD_DIR'] + '/build_' + lib['name'] + '_shared',
                 'install/shared')
 
-            if lib['name'] == 'harfbuzz-gobject':
-                shared_env.glib_mkenums_sources(
-                    shared_env['BUILD_DIR'] + '/build_' + lib['name'] + '_shared/repo/src/hb-gobject-enums.cc',  
-                    ['repo/src/hb-gobject-enums.cc.tmpl'] + gobject_headers + project_headers, 
-                    PRINT_CMD_LINE_FUNC=generate_source,
-                    GLIBMKENUMS_SOURCE_DONE=False)
-
-           
             if env['CC'] != 'cl':
                 shared_env.Append(
                     CCFLAGS=['-fvisibility-inlines-hidden'])
 
-            if lib['depends']:
+            if lib.get('depends'):
                 shared_env.Append(
                     LIBS=[lib['depends']],
                     LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_' + lib['depends'] + '_shared'])
