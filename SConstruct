@@ -14,7 +14,7 @@ import SCons.Script.Main
 
 from BuildUtils.SconsUtils import SetBuildJobs, SetupBuildEnv, ProgressCounter
 from BuildUtils.ColorPrinter import ColorPrinter
-from BuildUtils.FindPackages import FindFreetype, FindGraphite2, FindGlib, FindIcu
+from BuildUtils.FindPackages import FindFreetype, FindGraphite2, FindGlib, FindIcu, FindCairo
 from BuildUtils.ConfigureChecks import *
 
 
@@ -92,6 +92,7 @@ def CreateNewEnv():
 
     SetBuildJobs(env)
     GetHarfbuzzVersion(env)
+    progress = ProgressCounter()
 
     project_sources = []
     project_headers = []
@@ -125,6 +126,7 @@ def CreateNewEnv():
     )
     
     ConfigureEnv(env)
+    env.Append(CPPPATH='repo/src')
 
     if env['HAVE_FREETYPE']:
         if not FindFreetype(env, conf_dir=env['BUILD_DIR']):
@@ -316,7 +318,48 @@ def CreateNewEnv():
     if sys.platform == 'win32' and not env['BUILD_SHARED']:
         env['HAVE_INTROSPECTION'] = False
 
+    if env['BUILD_UTILS'] and FindCairo(env, conf_dir=env['BUILD_DIR']):
+       
+        utils = [
+            ('hb-view', GetSources('HB_VIEW_sources', 'repo/util/Makefile.sources')),
+            ('hb-shape', GetSources('HB_SHAPE_sources', 'repo/util/Makefile.sources')),
+            ('hb-subset', GetSources('HB_SUBSET_CLI_sources', 'repo/util/Makefile.sources')),
+            ('hb-ot-shape-closure', GetSources('HB_OT_SHAPE_CLOSURE_sources', 'repo/util/Makefile.sources')),
+        ]
+
+        for util, sources in utils:
+
+            source_files = []
+            header_files = []
+            SortSources(
+                source_files, 
+                header_files, 
+                sources
+            )
+            util_env, util_bin = SetupBuildEnv(
+                env,
+                progress,
+                'exec',
+                util,
+                source_files,
+                env['BUILD_DIR'] + '/utils/' + util,
+                'install/bin')
+            util_env.Append(
+                LIBPATH=[env['BUILD_DIR'] + '/build_harfbuzz_shared'],
+                LIBS=['harfbuzz'],
+                CPPDEFINES=[
+                    ('PACKAGE_NAME', '\\"HarfBuzz\\"'),
+                    ('PACKAGE_VERSION', env['HB_VERSION'].replace('.', '')),
+                ])
+            if util == 'hb-subset':
+                util_env.Append(
+                    LIBPATH=[env['BUILD_DIR'] + '/build_harfbuzz-subset_shared'],
+                    LIBS=['harfbuzz-subset']
+                )
+
+
     if env['HAVE_INTROSPECTION']:
+
         gircompiler_path = None
         girscanner_path = None
         for path in os.environ["PATH"].split(os.pathsep):
@@ -439,8 +482,7 @@ def CreateNewEnv():
             PRINT_CMD_LINE_FUNC=run_introspection_compiler
         )
 
-    progress = ProgressCounter()
-    env.Append(CPPPATH='repo/src')
+    
     
     libraries = [{
         'name':'harfbuzz',
@@ -464,6 +506,7 @@ def CreateNewEnv():
         })
        
     for lib in libraries:
+
         static_env, static_lib = SetupBuildEnv(
             env,
             progress,
@@ -472,7 +515,7 @@ def CreateNewEnv():
             lib['source'],
             env['BUILD_DIR'] + '/build_' + lib['name'] + '_static',
             'install/static')
-        
+
         if lib.get('depends'):
             static_env.Append(
                 LIBS=[lib['depends']],
@@ -488,6 +531,12 @@ def CreateNewEnv():
                 env['BUILD_DIR'] + '/build_' + lib['name'] + '_shared',
                 'install/shared')
 
+            #if lib['name'] == 'harfbuzz':
+            #    shared_env.Append(LINKFLAGS = ['-lc'])
+            #    shared_env['CXX'] = 'gcc'
+            #    shared_env['LINK'] = 'ld'
+
+
             if env['CC'] != 'cl':
                 shared_env.Append(
                     CCFLAGS=['-fvisibility-inlines-hidden'])
@@ -497,35 +546,71 @@ def CreateNewEnv():
                     LIBS=[lib['depends']],
                     LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_' + lib['depends'] + '_shared'])
 
-    tests = [
-        'main',
-        'test',
-        'test-would-substitute', 
-        'test-size-params',
-        'test-buffer-serialize',
-        'hb-ot-tag', 
-        'test-unicode-ranges'
-    ]
+    if env['BUILD_TESTS']:
 
-    for test in tests:
-        test_env, test_bin = SetupBuildEnv(
-            env,
-            progress,
-            'exec',
-            test,
-            ['repo/src/' + test + ".cc"],
-            env['BUILD_DIR'] + '/tests',
-            'install/bin')
-        if test == 'hb-ot-tag':
-            test_env.Append(CPPDEFINES=['MAIN'])
-        test_env.Append(
-            LIBS=['harfbuzz'],
-            LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_harfbuzz_shared'])
+        tests = [
+            'main',
+            'test',
+            'test-would-substitute', 
+            'test-size-params',
+            'test-buffer-serialize',
+            'hb-ot-tag', 
+            'test-unicode-ranges'
+        ]
 
+        for test in tests:
+            test_env, test_bin = SetupBuildEnv(
+                env,
+                progress,
+                'exec',
+                test,
+                ['repo/src/' + test + ".cc"],
+                env['BUILD_DIR'] + '/tests',
+                'install/bin')
+            if test == 'hb-ot-tag':
+                test_env.Append(CPPDEFINES=['MAIN'])
+            test_env.Append(
+                LIBS=['harfbuzz'],
+                LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_harfbuzz_shared'])
+
+        if (sys.platform != 'win32' or 
+            (env.Detect('gcc') and sys.platform == 'win32')):
+
+            if env['BUILD_SHARED']:
+
+                def generate_def_file(s, target, source, env):
+                    p.InfoPrint(" Generating harfbuzz.def...")
+
+                def run_tests(s, target, source, env):
+                    for test in [os.path.basename(arg)for arg in s.split(' ') if os.path.basename(arg).endswith('.sh')]:
+                        p.InfoPrint(' Running ' + test + ' test...')
+
+                env.Command(
+                    env['BUILD_DIR'] + '/build_harfbuzz_shared/harfbuzz.def', 
+                    project_headers, 
+                    sys.executable + ' repo/src/gen-def.py $TARGET $SOURCES',
+                    PRINT_CMD_LINE_FUNC=generate_def_file )
+                
+                
+                env.Command(
+                    env['BUILD_DIR'] + '/tests/check-static-inits.out', 
+                    env['BUILD_DIR'] + '/build_harfbuzz_static/libharfbuzz.a',
+                    'export libs=. && cd ' + env['BUILD_DIR'] + '/build_harfbuzz_static/repo/src ' 
+                        + env['PROJECT_DIR'] + '/repo/src/check-static-inits.sh > ' 
+                        + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+                    PRINT_CMD_LINE_FUNC=run_tests)
+
+                #env.Command(
+                #    env['BUILD_DIR'] + '/tests/check-libstdc++.out', 
+                #    ['install/shared/libharfbuzz.so','install/shared/libharfbuzz-gobject.so'],
+                #    'export libs=. && cd install/shared && ' 
+                #        + env['PROJECT_DIR'] + '/repo/src/check-libstdc++.sh > ' 
+                #        + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+                #    PRINT_CMD_LINE_FUNC=run_tests)
+                #
 
 
     Progress(progress, interval=1)
-
 
 def ConfigureEnv(env):
 
@@ -537,22 +622,10 @@ def ConfigureEnv(env):
             os.remove(env['BUILD_DIR'] + '/build.conf')
 
         vars = Variables(env['BUILD_DIR'] + '/build.conf')
-
-        # vars.Add('ZPREFIX', '' )
-        # vars.Add('SOLO', '')
-        # vars.Add('COVER', '')
         vars.Update(env)
-
-        # if('--zprefix' in sys.argv): env['ZPREFIX'] = GetOption('option_zprefix')
-        # if('--solo' in sys.argv):    env['SOLO']    = GetOption('option_solo')
-        # if('--cover' in sys.argv):   env['COVER']   = GetOption('option_cover')
-
         vars.Save(env['BUILD_DIR'] + '/build.conf', env)
 
         configureString = ""
-        # if env['ZPREFIX']: configureString += "--zprefix "
-        # if env['SOLO']:    configureString += "--solo "
-        # if env['COVER']:   configureString += "--cover "
 
         if configureString == "":
             configureString = " Configuring... "
@@ -590,7 +663,7 @@ def ConfigureEnv(env):
         env['HAVE_CPP11'] = conf.CheckStdCpp11()
 
         checks_funcs = [
-            'atexit',
+        
             'mprotect',
             'sysconf',
             'getpagesize',
