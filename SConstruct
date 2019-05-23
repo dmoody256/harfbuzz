@@ -9,10 +9,12 @@ import platform
 import fileinput
 import subprocess
 
+start_time = time.time()
+
 import SCons.Action
 import SCons.Script.Main
 
-from BuildUtils.SconsUtils import SetBuildJobs, SetupBuildEnv, ProgressCounter
+from BuildUtils.SconsUtils import SetBuildJobs, SetupBuildEnv, ProgressCounter, display_build_status
 from BuildUtils.ColorPrinter import ColorPrinter
 from BuildUtils.FindPackages import FindFreetype, FindGraphite2, FindGlib, FindIcu, FindCairo
 from BuildUtils.ConfigureChecks import *
@@ -125,9 +127,6 @@ def CreateNewEnv():
         GetSources('HB_SUBSET_sources', 'repo/src/Makefile.sources')
     )
     
-    ConfigureEnv(env)
-    env.Append(CPPPATH='repo/src')
-
     if env['HAVE_FREETYPE']:
         if not FindFreetype(env, conf_dir=env['BUILD_DIR']):
             p.ErrorPrint(
@@ -192,6 +191,10 @@ def CreateNewEnv():
             project_headers += ['repo/src/hb-directwrite.h']
     headercom = None
     sourcecom = None
+
+    ConfigureEnv(env)
+    env.Append(CPPPATH='repo/src')
+
     if env['HAVE_GOBJECT']:
 
         glibmkenum_path = None
@@ -239,12 +242,8 @@ def CreateNewEnv():
 
         def replace_enums(env, target, source):
             header_target = os.path.basename(target[0].abspath)
-            if header_target.endswith(".h"):
-                f1 = open('repo/src/' + os.path.basename(target[0].abspath), 'w')
-                f2 = open('repo/src/' + os.path.basename(target[0].abspath), 'r')
-            else:
-                f1 = open(target[0].abspath, 'w')
-                f2 = open(target[0].abspath, 'r')
+            f1 = open('repo/src/' + os.path.basename(target[0].abspath), 'w')
+            f2 = open('repo/src/' + os.path.basename(target[0].abspath), 'r')
             contents = f2.read().replace('_t_get_type', '_get_type').replace('_T (', ' (')
             f2.close()
             f1.write(contents)
@@ -261,7 +260,7 @@ def CreateNewEnv():
             # hacky: https://github.com/SCons/scons/issues/2908
             Depends(env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/' + target_file, target_file)
             Depends(env['BUILD_DIR'] + '/build_harfbuzz-gobject_static/' + target_file, target_file)
-            return (target, source)
+            return (target_file, source)
 
         env['BUILDERS']['glib_mkenums_headers'] = Builder(
             action = [SCons.Action.CommandAction(cmd), SCons.Action.FunctionAction(replace_enums, {})],
@@ -531,12 +530,6 @@ def CreateNewEnv():
                 env['BUILD_DIR'] + '/build_' + lib['name'] + '_shared',
                 'install/shared')
 
-            #if lib['name'] == 'harfbuzz':
-            #    shared_env.Append(LINKFLAGS = ['-lc'])
-            #    shared_env['CXX'] = 'gcc'
-            #    shared_env['LINK'] = 'ld'
-
-
             if env['CC'] != 'cl':
                 shared_env.Append(
                     CCFLAGS=['-fvisibility-inlines-hidden'])
@@ -551,8 +544,8 @@ def CreateNewEnv():
         tests = [
             'main',
             'test',
-            'test-would-substitute', 
-            'test-size-params',
+            'test-gsub-would-substitute', 
+            'test-gpos-size-params',
             'test-buffer-serialize',
             'hb-ot-tag', 
             'test-unicode-ranges'
@@ -607,10 +600,10 @@ def CreateNewEnv():
                 #        + env['PROJECT_DIR'] + '/repo/src/check-libstdc++.sh > ' 
                 #        + env['PROJECT_DIR'] + '/$TARGET 2>&1',
                 #    PRINT_CMD_LINE_FUNC=run_tests)
-                #
-
-
+                
     Progress(progress, interval=1)
+
+    atexit.register(display_build_status, env['PROJECT_DIR'], start_time)
 
 def ConfigureEnv(env):
 
