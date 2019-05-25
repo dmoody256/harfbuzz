@@ -1,3 +1,12 @@
+from BuildUtils.ConfigureChecks import *
+from BuildUtils.FindPackages import FindFreetype
+from BuildUtils.FindPackages import FindGraphite2
+from BuildUtils.FindPackages import FindGlib, FindIcu, FindCairo
+from BuildUtils.ColorPrinter import ColorPrinter
+from BuildUtils.SconsUtils import SetBuildJobs, SetupBuildEnv
+from BuildUtils.SconsUtils import ProgressCounter, display_build_status
+import SCons.Script.Main
+import SCons.Action
 import os
 import sys
 import glob
@@ -11,17 +20,9 @@ import subprocess
 
 start_time = time.time()
 
-import SCons.Action
-import SCons.Script.Main
-
-from BuildUtils.SconsUtils import SetBuildJobs, SetupBuildEnv, ProgressCounter, display_build_status
-from BuildUtils.ColorPrinter import ColorPrinter
-from BuildUtils.FindPackages import FindFreetype, FindGraphite2, FindGlib, FindIcu, FindCairo
-from BuildUtils.ConfigureChecks import *
-
 
 def CreateNewEnv():
-    
+
     p = ColorPrinter()
     SetupOptions()
 
@@ -43,7 +44,7 @@ def CreateNewEnv():
             'option_have_uniscribe',
             'option_have_directwrite',
         ]
-           
+
     if sys.platform == 'darwin':
         harfbuzz_options += [
             'option_have_coretext',
@@ -105,26 +106,28 @@ def CreateNewEnv():
     project_extra_headers = []
     subset_project_sources = []
     subset_project_headers = []
-    
 
     sources = (
-        GetSources('HB_BASE_sources', 'repo/src/Makefile.sources') +
-        GetSources('HB_BASE_RAGEL_GENERATED_sources', 'repo/src/Makefile.sources') +
-        GetSources('HB_FALLBACK_sources', 'repo/src/Makefile.sources') +
+        GetSources('HB_BASE_sources',
+                   'repo/src/Makefile.sources') +
+        GetSources('HB_BASE_RAGEL_GENERATED_sources',
+                   'repo/src/Makefile.sources') +
+        GetSources('HB_FALLBACK_sources',
+                   'repo/src/Makefile.sources') +
         GetSources('HB_BASE_headers', 'repo/src/Makefile.sources'))
 
     SortSources(
-        project_sources, 
-        project_headers, 
+        project_sources,
+        project_headers,
         sources
     )
 
     SortSources(
-        subset_project_sources, 
-        subset_project_headers, 
+        subset_project_sources,
+        subset_project_headers,
         GetSources('HB_SUBSET_sources', 'repo/src/Makefile.sources')
     )
-    
+
     if env['HAVE_FREETYPE']:
         if not FindFreetype(env, conf_dir=env['BUILD_DIR']):
             p.ErrorPrint(
@@ -138,7 +141,7 @@ def CreateNewEnv():
         env.Append(CPPDEFINES=['HAVE_GRAPHITE2'])
         project_sources += ['repo/src/hb-graphite2.cc']
         project_headers += ['repo/src/hb-graphite2.h']
-    
+
     if env['HAVE_GLIB'] and FindGlib(env, conf_dir=env['BUILD_DIR']):
         env.Append(CPPDEFINES=['HAVE_GLIB'])
         project_sources += ['repo/src/hb-glib.cc']
@@ -200,13 +203,17 @@ def CreateNewEnv():
 
         if glibmkenum_path:
             process = subprocess.Popen(
-                [sys.executable, glibmkenum_path, '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                [sys.executable, glibmkenum_path, '--version'],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE)
             stdout, stderr = process.communicate()
             if process.returncode == 0:
                 glibmkenum_cmd = [sys.executable, glibmkenum_path]
             elif perl_path:
                 process = subprocess.Popen(
-                    [perl_path, glibmkenum_path, '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    [perl_path, glibmkenum_path, '--version'],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE)
                 stdout, stderr = process.communicate()
                 if process.returncode == 0:
                     glibmkenum_cmd = [perl_path, glibmkenum_path]
@@ -237,54 +244,62 @@ def CreateNewEnv():
             f1.close()
 
         cmd = ' '.join(glibmkenum_cmd + [
-            '--template', 'repo/src/${TARGET.file}.tmpl', 
+            '--template', 'repo/src/${TARGET.file}.tmpl',
             '--identifier-prefix', 'hb_',
             '--symbol-prefix', 'hb_gobject']) + " $SOURCES > $TARGET"
 
         def glib_mkenums_emitter(target, source, env):
-            source = [file for file in source if not file.abspath.endswith('.tmpl')]
+            source = [
+                file for file in source if not file.abspath.endswith('.tmpl')]
             target_file = 'repo/src/' + os.path.basename(target[0].abspath)
             # hacky: https://github.com/SCons/scons/issues/2908
-            Depends(env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/' + target_file, target_file)
-            Depends(env['BUILD_DIR'] + '/build_harfbuzz-gobject_static/' + target_file, target_file)
+            Depends(
+                env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/' + target_file, target_file)
+            Depends(
+                env['BUILD_DIR'] + '/build_harfbuzz-gobject_static/' + target_file, target_file)
             return (target_file, source)
 
         env['BUILDERS']['glib_mkenums_headers'] = Builder(
-            action = [SCons.Action.CommandAction(cmd), SCons.Action.FunctionAction(replace_enums, {})],
-            emitter = glib_mkenums_emitter,
-            suffix = '.h', src_suffix = '.tmpl')
+            action=[SCons.Action.CommandAction(
+                cmd), SCons.Action.FunctionAction(replace_enums, {})],
+            emitter=glib_mkenums_emitter,
+            suffix='.h', src_suffix='.tmpl')
         env['BUILDERS']['glib_mkenums_sources'] = Builder(
-            action = [SCons.Action.CommandAction(cmd), SCons.Action.FunctionAction(replace_enums, {})],
-            emitter = glib_mkenums_emitter,
-            suffix = '.cc', src_suffix = '.tmpl')
+            action=[SCons.Action.CommandAction(
+                cmd), SCons.Action.FunctionAction(replace_enums, {})],
+            emitter=glib_mkenums_emitter,
+            suffix='.cc', src_suffix='.tmpl')
 
         def generate_header(s, target, source, env):
             if not env['GLIBMKENUMS_HEADERS_DONE']:
                 p.InfoPrint(" Generating glib-mkenums headers...")
                 env['GLIBMKENUMS_HEADERS_DONE'] = True
+
         def generate_source(s, target, source, env):
             if not env['GLIBMKENUMS_SOURCE_DONE']:
                 p.InfoPrint(" Generating glib-mkenums sources...")
                 env['GLIBMKENUMS_SOURCE_DONE'] = True
 
         env.glib_mkenums_headers(
-            'repo/src/hb-gobject-enums.h', 
-            ['repo/src/hb-gobject-enums.h.tmpl'] + gobject_structs_headers + project_headers, 
-            PRINT_CMD_LINE_FUNC=generate_header, 
-            GLIBMKENUMS_HEADERS_DONE=False )
+            'repo/src/hb-gobject-enums.h',
+            ['repo/src/hb-gobject-enums.h.tmpl'] +
+            gobject_structs_headers + project_headers,
+            PRINT_CMD_LINE_FUNC=generate_header,
+            GLIBMKENUMS_HEADERS_DONE=False)
 
         env.glib_mkenums_sources(
-            'repo/src/hb-gobject-enums.cc',  
-            ['repo/src/hb-gobject-enums.cc.tmpl'] + gobject_headers + project_headers, 
+            'repo/src/hb-gobject-enums.cc',
+            ['repo/src/hb-gobject-enums.cc.tmpl'] +
+            gobject_headers + project_headers,
             PRINT_CMD_LINE_FUNC=generate_source,
-            GLIBMKENUMS_SOURCE_DONE=False) 
+            GLIBMKENUMS_SOURCE_DONE=False)
 
     if env['BUILD_SHARED']:
         if env['CC'] == 'cl':
             env.Append(CPPDEFINES=['HB_DLL_EXPORT'])
 
-    if (sys.platform != 'win32' or 
-        (env.Detect('gcc') and sys.platform == 'win32')):
+    if (sys.platform != 'win32' or
+            (env.Detect('gcc') and sys.platform == 'win32')):
         if env['HAVE_BSYMBOLIC']:
             env.Append(
                 LINKFLAGS=['-Bsymbolic-functions']
@@ -292,7 +307,7 @@ def CreateNewEnv():
         if env['CC'] == 'gcc' or env['CC'] == 'clang':
             env.Append(
                 CCFLAGS=[
-                    '-fno-rtti', 
+                    '-fno-rtti',
                     '-fno-exceptions',
                     '-fno-threadsafe-statics'
                 ],
@@ -305,12 +320,14 @@ def CreateNewEnv():
         env['HAVE_INTROSPECTION'] = False
 
     if env['BUILD_UTILS'] and FindCairo(env, conf_dir=env['BUILD_DIR']):
-       
+
         utils = [
             ('hb-view', GetSources('HB_VIEW_sources', 'repo/util/Makefile.sources')),
             ('hb-shape', GetSources('HB_SHAPE_sources', 'repo/util/Makefile.sources')),
-            ('hb-subset', GetSources('HB_SUBSET_CLI_sources', 'repo/util/Makefile.sources')),
-            ('hb-ot-shape-closure', GetSources('HB_OT_SHAPE_CLOSURE_sources', 'repo/util/Makefile.sources')),
+            ('hb-subset', GetSources('HB_SUBSET_CLI_sources',
+                                     'repo/util/Makefile.sources')),
+            ('hb-ot-shape-closure', GetSources('HB_OT_SHAPE_CLOSURE_sources',
+                                               'repo/util/Makefile.sources')),
         ]
 
         for util, sources in utils:
@@ -318,8 +335,8 @@ def CreateNewEnv():
             source_files = []
             header_files = []
             SortSources(
-                source_files, 
-                header_files, 
+                source_files,
+                header_files,
                 sources
             )
             util_env, util_bin = SetupBuildEnv(
@@ -339,10 +356,10 @@ def CreateNewEnv():
                 ])
             if util == 'hb-subset':
                 util_env.Append(
-                    LIBPATH=[env['BUILD_DIR'] + '/build_harfbuzz-subset_shared'],
+                    LIBPATH=[env['BUILD_DIR'] +
+                             '/build_harfbuzz-subset_shared'],
                     LIBS=['harfbuzz-subset']
                 )
-
 
     if env['HAVE_INTROSPECTION']:
 
@@ -355,15 +372,17 @@ def CreateNewEnv():
                 gircompiler_path = os.path.join(path, 'g-ir-compiler')
 
         if not girscanner_path:
-            p.ErrorPrint("Can't build introspection because no g-ir-scanner in path.")
+            p.ErrorPrint(
+                "Can't build introspection because no g-ir-scanner in path.")
 
         if not gircompiler_path:
-            p.ErrorPrint("Can't build introspection because no g-ir-compiler in path.")
+            p.ErrorPrint(
+                "Can't build introspection because no g-ir-compiler in path.")
 
         introspection = (
-            project_headers + 
-            project_sources + 
-            gobject_gen_sources + 
+            project_headers +
+            project_sources +
+            gobject_gen_sources +
             gobject_gen_headers +
             gobject_sources +
             gobject_headers)
@@ -380,13 +399,13 @@ def CreateNewEnv():
             p.InfoPrint(" Generating Introspection list...")
 
         env.Command(
-            'repo/src/hb_gir_list', 
-            introspection, 
+            'repo/src/hb_gir_list',
+            introspection,
             write_introspection_list,
             PRINT_CMD_LINE_FUNC=generate_introspection_list
-            )
+        )
 
-        scanner_cmd_str= [
+        scanner_cmd_str = [
             girscanner_path,
             '--warn-all', '--no-libtool', '--verbose',
             '-n', 'hb',
@@ -399,14 +418,14 @@ def CreateNewEnv():
         ]
 
         scanner_cmd_str += env['CCFLAGS']
-        scanner_cmd_str += [ '-I' + include for include in env['CPPPATH']]
+        scanner_cmd_str += ['-I' + include for include in env['CPPPATH']]
         scanner_cmd_str += ['-Irepo/src']
 
         for define in env['CPPDEFINES']:
             if type(define) is list or type(define) is tuple:
-                scanner_cmd_str += [ '-D' + define[0] + '=' + define[1]]
+                scanner_cmd_str += ['-D' + define[0] + '=' + define[1]]
             else:
-                scanner_cmd_str += [ '-D' + define ]
+                scanner_cmd_str += ['-D' + define]
 
         scanner_cmd_str += [
             '-DHB_H',
@@ -425,29 +444,31 @@ def CreateNewEnv():
 
         # --extra-library not supported option?
         #scanner_cmd_str += [ '--extra-library=' + flag for flag in env['LIBS'] if not flag.startswith('harfbuzz')]
-        
+
         scanner_cmd_str += [
-            '-L' + env['PROJECT_DIR'] + '/install/shared', 
-            '--filelist', 
+            '-L' + env['PROJECT_DIR'] + '/install/shared',
+            '--filelist',
             'repo/src/hb_gir_list',
             '-o', 'install/shared/HarfBuzz-0.0.gir',
             '>', env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/girscanner.txt', '2>&1']
 
         def run_introspection_scanner(s, target, source, env):
-            f1 = open(env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/girscanner_command.txt', 'w')
+            f1 = open(
+                env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/girscanner_command.txt', 'w')
             f1.write(s)
             f1.close()
             p.InfoPrint(" Generating Introspection gir...")
 
         env.Command(
-            'install/shared/HarfBuzz-0.0.gir', 
-            'repo/src/hb_gir_list', 
+            'install/shared/HarfBuzz-0.0.gir',
+            'repo/src/hb_gir_list',
             ' '.join(scanner_cmd_str),
             PRINT_CMD_LINE_FUNC=run_introspection_scanner
         )
 
         def run_introspection_compiler(s, target, source, env):
-            f1 = open(env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/gircompiler_command.txt', 'w')
+            f1 = open(
+                env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/gircompiler_command.txt', 'w')
             f1.write(s)
             f1.close()
             p.InfoPrint(" Compiling Introspection typelib...")
@@ -458,20 +479,19 @@ def CreateNewEnv():
             '--includedir', 'repo/src',
             'install/shared/HarfBuzz-0.0.gir',
             '-o', 'install/shared/HarfBuzz-0.0.typelib',
-            '>', env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/gircompiler.txt', '2>&1'
+            '>', env['BUILD_DIR'] +
+            '/build_harfbuzz-gobject_shared/gircompiler.txt', '2>&1'
         ]
 
         env.Command(
-            'install/shared/HarfBuzz-0.0.typelib', 
-            'install/shared/HarfBuzz-0.0.gir', 
+            'install/shared/HarfBuzz-0.0.typelib',
+            'install/shared/HarfBuzz-0.0.gir',
             ' '.join(compiler_cmd_str),
             PRINT_CMD_LINE_FUNC=run_introspection_compiler
         )
 
-    
-    
     libraries = [{
-        'name':'harfbuzz',
+        'name': 'harfbuzz',
         'source': project_sources + project_extra_sources,
     }]
 
@@ -479,18 +499,18 @@ def CreateNewEnv():
         subset_project_sources = [
             source for source in subset_project_sources if source.endswith(".cc")]
         libraries.append({
-            'name':'harfbuzz-subset',
+            'name': 'harfbuzz-subset',
             'source': subset_project_sources,
             'depends': 'harfbuzz'
         })
 
-    if env['HAVE_GOBJECT']: 
+    if env['HAVE_GOBJECT']:
         libraries.append({
-            'name':'harfbuzz-gobject',
-            'source':gobject_sources + gobject_gen_sources,
+            'name': 'harfbuzz-gobject',
+            'source': gobject_sources + gobject_gen_sources,
             'depends': 'harfbuzz'
         })
-       
+
     for lib in libraries:
 
         static_env, static_lib = SetupBuildEnv(
@@ -506,7 +526,7 @@ def CreateNewEnv():
             static_env.Append(
                 LIBS=[lib['depends']],
                 LIBPATH=[env['PROJECT_DIR'] + '/' + static_env['BUILD_DIR'] + '/build_' + lib['depends'] + '_static'])
-        
+
         if env['BUILD_SHARED']:
             shared_env, shared_lib = SetupBuildEnv(
                 env,
@@ -531,10 +551,10 @@ def CreateNewEnv():
         tests = [
             'main',
             'test',
-            'test-gsub-would-substitute', 
+            'test-gsub-would-substitute',
             'test-gpos-size-params',
             'test-buffer-serialize',
-            'hb-ot-tag', 
+            'hb-ot-tag',
             'test-unicode-ranges'
         ]
 
@@ -553,8 +573,8 @@ def CreateNewEnv():
                 LIBS=['harfbuzz'],
                 LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_harfbuzz_shared'])
 
-        if (sys.platform != 'win32' or 
-            (env.Detect('gcc') and sys.platform == 'win32')):
+        if (sys.platform != 'win32' or
+                (env.Detect('gcc') and sys.platform == 'win32')):
 
             if env['BUILD_SHARED']:
 
@@ -566,31 +586,32 @@ def CreateNewEnv():
                         p.InfoPrint(' Running ' + test + ' test...')
 
                 env.Command(
-                    env['BUILD_DIR'] + '/build_harfbuzz_shared/harfbuzz.def', 
-                    project_headers, 
+                    env['BUILD_DIR'] + '/build_harfbuzz_shared/harfbuzz.def',
+                    project_headers,
                     sys.executable + ' repo/src/gen-def.py $TARGET $SOURCES',
-                    PRINT_CMD_LINE_FUNC=generate_def_file )
-                
-                
+                    PRINT_CMD_LINE_FUNC=generate_def_file)
+
                 env.Command(
-                    env['BUILD_DIR'] + '/tests/check-static-inits.out', 
+                    env['BUILD_DIR'] + '/tests/check-static-inits.out',
                     env['BUILD_DIR'] + '/build_harfbuzz_static/libharfbuzz.a',
-                    'export libs=. && cd ' + env['BUILD_DIR'] + '/build_harfbuzz_static/repo/src ' 
-                        + env['PROJECT_DIR'] + '/repo/src/check-static-inits.sh > ' 
-                        + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+                    'export libs=. && cd ' +
+                    env['BUILD_DIR'] + '/build_harfbuzz_static/repo/src '
+                    + env['PROJECT_DIR'] + '/repo/src/check-static-inits.sh > '
+                    + env['PROJECT_DIR'] + '/$TARGET 2>&1',
                     PRINT_CMD_LINE_FUNC=run_tests)
 
-                #env.Command(
-                #    env['BUILD_DIR'] + '/tests/check-libstdc++.out', 
+                # env.Command(
+                #    env['BUILD_DIR'] + '/tests/check-libstdc++.out',
                 #    ['install/shared/libharfbuzz.so','install/shared/libharfbuzz-gobject.so'],
-                #    'export libs=. && cd install/shared && ' 
-                #        + env['PROJECT_DIR'] + '/repo/src/check-libstdc++.sh > ' 
+                #    'export libs=. && cd install/shared && '
+                #        + env['PROJECT_DIR'] + '/repo/src/check-libstdc++.sh > '
                 #        + env['PROJECT_DIR'] + '/$TARGET 2>&1',
                 #    PRINT_CMD_LINE_FUNC=run_tests)
-                
+
     Progress(progress, interval=1)
 
     atexit.register(display_build_status, env['PROJECT_DIR'], start_time)
+
 
 def ConfigureEnv(env):
 
@@ -615,25 +636,25 @@ def ConfigureEnv(env):
         p.InfoPrint(configureString)
 
         # ruins logs so turning it off
-        #SCons.Script.Main.progress_display.set_mode(1)
-        
+        # SCons.Script.Main.progress_display.set_mode(1)
+
         conf = Configure(env, conf_dir=env['BUILD_DIR'] + "/conf_tests", log_file=env['BUILD_DIR'] + "/conf.log",
-                        custom_tests={  
-                            'CheckLargeFile64': CheckLargeFile64,
-                            'CheckFseeko': CheckFseeko,
-                            'CheckSizeT': CheckSizeT,
-                            'CheckSizeTLongLong': CheckSizeTLongLong,
-                            'CheckSizeTPointerSize': CheckSizeTPointerSize,
-                            'CheckSharedLibrary': CheckSharedLibrary,
-                            'CheckUnistdH': CheckUnistdH,
-                            'CheckSolarisAtomics': CheckSolarisAtomics,
-                            'CheckIntelAtomicPrimitives': CheckIntelAtomicPrimitives,
-                            'CheckFunc' : CheckFunc,
-                            'CheckHeader' : CheckHeader,
-                            'CheckBSymbolic' : CheckBSymbolic,
-                            'CheckStdCpp11' : CheckStdCpp11
-                        })
-     
+                         custom_tests={
+            'CheckLargeFile64': CheckLargeFile64,
+            'CheckFseeko': CheckFseeko,
+            'CheckSizeT': CheckSizeT,
+            'CheckSizeTLongLong': CheckSizeTLongLong,
+            'CheckSizeTPointerSize': CheckSizeTPointerSize,
+            'CheckSharedLibrary': CheckSharedLibrary,
+            'CheckUnistdH': CheckUnistdH,
+            'CheckSolarisAtomics': CheckSolarisAtomics,
+            'CheckIntelAtomicPrimitives': CheckIntelAtomicPrimitives,
+            'CheckFunc': CheckFunc,
+            'CheckHeader': CheckHeader,
+            'CheckBSymbolic': CheckBSymbolic,
+            'CheckStdCpp11': CheckStdCpp11
+        })
+
         # with open('repo/zconf.h.in', 'r') as content_file:
         #    conf.env["ZCONFH"] = str(content_file.read())
 
@@ -643,7 +664,7 @@ def ConfigureEnv(env):
         env['HAVE_CPP11'] = conf.CheckStdCpp11()
 
         checks_funcs = [
-        
+
             'mprotect',
             'sysconf',
             'getpagesize',
@@ -695,7 +716,7 @@ def ConfigureEnv(env):
         conf.CheckIntelAtomicPrimitives()
 
         # ruins logs so turning it off
-        #SCons.Script.Main.progress_display.set_mode(0)
+        # SCons.Script.Main.progress_display.set_mode(0)
 
         env = conf.Finish()
 
@@ -817,6 +838,7 @@ def SortSources(source_list, header_list, mix_list):
             header_list.append(source)
         else:
             p.ErrorPrint("Unhandled source: " + source)
+
 
 def GetHarfbuzzVersion(env=None):
     with open('repo/configure.ac') as f:
@@ -990,13 +1012,12 @@ def SetupOptions():
             help='Enable CoreText shaper backend on macOS'
         )
 
-   
     # ruins logs so turning it off
-    #if(not GetOption('option_verbose')):
+    # if(not GetOption('option_verbose')):
         #scons_ver = SCons.__version__
-        #if int(scons_ver[0]) >= 3:
+        # if int(scons_ver[0]) >= 3:
         #    SetOption('silent', 1)
-        #SCons.Script.Main.progress_display.set_mode(0)
+        # SCons.Script.Main.progress_display.set_mode(0)
 
 
 CreateNewEnv()
