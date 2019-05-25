@@ -1,13 +1,13 @@
 matrix:
   include:
     - os: linux
-      dist: trusty
+      dist: xenial
       python: '3.5'
       env: 
         - PYTHONCOM=python
         - PYTHON_VERSION=3.5
     - os: linux
-      dist: trusty
+      dist: xenial
       python: '2.7'
       env: 
         - PYTHONCOM=python
@@ -24,7 +24,7 @@ install:
   - sudo -H python -m pip install -U pip setuptools wheel
   - sudo -H python -m pip install -U scons
   - sudo apt-get install gcc g++ libfreetype6-dev libglib2.0-dev libcairo2-dev
-  - sudo apt-get install autoconf automake libtool pkg-config ragel gtk-doc-tools
+  - sudo apt-get install pkg-config ragel gtk-doc-tools gobject-introspection
   - sudo apt-get install libicu-dev icu-devtools libgraphite2-dev libgirepository1.0-dev dbus 
 
 before_script:
