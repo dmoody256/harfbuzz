@@ -35,7 +35,6 @@ def CreateNewEnv():
         'option_build_subset',
         'option_build_tests',
         'option_build_shared',
-        'option_build_ucdn',
         'option_build_utils',
     ]
 
@@ -75,7 +74,6 @@ def CreateNewEnv():
     if env['HARFBUZZ_CHECK']:
         env['BUILD_SHARED'] = True
         env['BUILD_UTILS'] = True
-        env['BUILD_UCDN'] = True
         env['HAVE_ICU'] = True
         env['HAVE_GLIB'] = True
         env['HAVE_GOBJECT'] = True
@@ -140,17 +138,6 @@ def CreateNewEnv():
         env.Append(CPPDEFINES=['HAVE_GRAPHITE2'])
         project_sources += ['repo/src/hb-graphite2.cc']
         project_headers += ['repo/src/hb-graphite2.h']
-
-    if env['BUILD_UCDN']:
-        env.Append(
-            CPPPATH=['repo/src/hb-ucdn'],
-            CPPDEFINES=['HAVE_UCDN'])
-        project_sources += ['repo/src/hb-ucdn.cc']
-        SortSources(
-            project_extra_sources, 
-            project_extra_headers,
-            GetSources('LIBHB_UCDN_sources', 'repo/src/hb-ucdn/Makefile.sources')
-        )
     
     if env['HAVE_GLIB'] and FindGlib(env, conf_dir=env['BUILD_DIR']):
         env.Append(CPPDEFINES=['HAVE_GLIB'])
@@ -864,15 +851,6 @@ def SetupOptions():
         action='store_true',
         default=False,
         help='Enable Graphite2 complementary shaper'
-    )
-
-    AddOption(
-        '--no-builtin-ucdn',
-        dest='option_build_ucdn',
-        action='store_false',
-        metavar='BOOL',
-        default=True,
-        help="Don't use HarfBuzz provided UCDN"
     )
 
     AddOption(
