@@ -582,9 +582,20 @@ def CreateNewEnv():
                 'install/bin')
             if test == 'hb-ot-tag':
                 test_env.Append(CPPDEFINES=['MAIN'])
+
+            test_libs = ['harfbuzz']
+            if env['HAVE_FREETYPE']:
+                test_libs.append('freetype')
+            if env['HAVE_GLIB']:
+                test_libs.append('glib-2.0')
+            if env['HAVE_GRAPHITE2']:
+                test_libs.append('graphite2')  
+            if env['HAVE_ICU']:
+                test_libs.append('icuuc')
+                test_libs.append('icudata')
+
             test_env.Append(
-                LIBS=['harfbuzz', 'freetype', 'graphite2',
-                      'glib-2.0', 'icuuc', 'icudata'],
+                LIBS=test_libs,
                 LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_harfbuzz_shared'])
 
         if (sys.platform != 'win32' or
