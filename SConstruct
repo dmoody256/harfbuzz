@@ -550,12 +550,14 @@ def CreateNewEnv():
                     LIBS=[lib['depends']],
                     LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_' + lib['depends'] + '_shared'])
 
-            if lib.get('libs'):
-                shared_env['LIBS'] = lib.get('libs')
-            if lib.get('CXX'):
-                shared_env['CXX'] = lib.get('CXX')
-            if lib.get('LINK'):
-                shared_env['LINK'] = lib.get('LINK')
+            if (sys.platform != 'win32' or
+                    (env.Detect('gcc') and sys.platform == 'win32')):
+                if lib.get('libs'):
+                    shared_env['LIBS'] = lib.get('libs')
+                if lib.get('CXX'):
+                    shared_env['CXX'] = lib.get('CXX')
+                if lib.get('LINK'):
+                    shared_env['LINK'] = lib.get('LINK')
 
     if env['BUILD_TESTS']:
 
