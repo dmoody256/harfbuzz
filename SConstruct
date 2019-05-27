@@ -443,7 +443,8 @@ def CreateNewEnv():
         ]
 
         # --extra-library not supported option?
-        #scanner_cmd_str += [ '--extra-library=' + flag for flag in env['LIBS'] if not flag.startswith('harfbuzz')]
+        scanner_cmd_str += ['--library=' + flag for flag in env['LIBS']
+                            if not flag.startswith('harfbuzz')]
 
         scanner_cmd_str += [
             '-L' + env['PROJECT_DIR'] + '/install/shared',
@@ -493,6 +494,9 @@ def CreateNewEnv():
     libraries = [{
         'name': 'harfbuzz',
         'source': project_sources + project_extra_sources,
+        'libs': ['m'],
+        'CXX': 'c++',
+        'LINK': 'cc'
     }]
 
     if env['BUILD_SUBSET']:
@@ -546,6 +550,13 @@ def CreateNewEnv():
                     LIBS=[lib['depends']],
                     LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_' + lib['depends'] + '_shared'])
 
+            if lib.get('libs'):
+                shared_env['LIBS'] = lib.get('libs')
+            if lib.get('CXX'):
+                shared_env['CXX'] = lib.get('CXX')
+            if lib.get('LINK'):
+                shared_env['LINK'] = lib.get('LINK')
+
     if env['BUILD_TESTS']:
 
         tests = [
@@ -570,7 +581,8 @@ def CreateNewEnv():
             if test == 'hb-ot-tag':
                 test_env.Append(CPPDEFINES=['MAIN'])
             test_env.Append(
-                LIBS=['harfbuzz'],
+                LIBS=['harfbuzz', 'freetype', 'graphite2',
+                      'glib-2.0', 'icuuc', 'icudata'],
                 LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_harfbuzz_shared'])
 
         if (sys.platform != 'win32' or
@@ -600,13 +612,18 @@ def CreateNewEnv():
                     + env['PROJECT_DIR'] + '/$TARGET 2>&1',
                     PRINT_CMD_LINE_FUNC=run_tests)
 
-                # env.Command(
-                #    env['BUILD_DIR'] + '/tests/check-libstdc++.out',
-                #    ['install/shared/libharfbuzz.so','install/shared/libharfbuzz-gobject.so'],
-                #    'export libs=. && cd install/shared && '
-                #        + env['PROJECT_DIR'] + '/repo/src/check-libstdc++.sh > '
-                #        + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-                #    PRINT_CMD_LINE_FUNC=run_tests)
+                libcpp_tests_libs = ['install/shared/libharfbuzz.so']
+                if env['HAVE_GOBJECT']:
+                    libcpp_tests_libs.append(
+                        'install/shared/libharfbuzz-gobject.so')
+
+                env.Command(
+                    env['BUILD_DIR'] + '/tests/check-libstdc++.out',
+                    libcpp_tests_libs,
+                    'export libs=. && cd install/shared && '
+                    + env['PROJECT_DIR'] + '/repo/src/check-libstdc++.sh > '
+                    + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+                    PRINT_CMD_LINE_FUNC=run_tests)
 
     Progress(progress, interval=1)
 
@@ -652,7 +669,8 @@ def ConfigureEnv(env):
             'CheckFunc': CheckFunc,
             'CheckHeader': CheckHeader,
             'CheckBSymbolic': CheckBSymbolic,
-            'CheckStdCpp11': CheckStdCpp11
+            'CheckStdCpp11': CheckStdCpp11,
+            'CheckRoundFunc': CheckRoundFunc,
         })
 
         # with open('repo/zconf.h.in', 'r') as content_file:
@@ -672,8 +690,12 @@ def ConfigureEnv(env):
             'isatty',
             'newlocale',
             'strtod_l',
-            'round'
+            'atexit'
         ]
+
+        env['HAVE_ROUND'] = conf.CheckRoundFunc()
+        if env['HAVE_ROUND']:
+            env.Append(CPPDEFINES=['HAVE_ROUND'])
 
         if env.get('HB_HAVE_FREETYPE'):
             checks_funcs += [
