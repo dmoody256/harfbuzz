@@ -603,8 +603,8 @@ def CreateNewEnv():
                 (env.Detect('gcc') and sys.platform == 'win32')):
 
             def run_tests(s, target, source, env):
-            for test in [os.path.basename(arg)for arg in s.split(' ') if os.path.basename(arg).endswith('.sh')]:
-                p.InfoPrint(' Running ' + test + ' test...')
+                for test in [os.path.basename(arg)for arg in s.split(' ') if os.path.basename(arg).endswith('.sh')]:
+                    p.InfoPrint(' Running ' + test + ' test...')
 
             if env['BUILD_SHARED']:
 
