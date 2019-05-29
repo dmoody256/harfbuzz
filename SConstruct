@@ -599,12 +599,12 @@ def CreateNewEnv():
                 LIBS=test_libs,
                 LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_harfbuzz_shared'])
 
-        def run_tests(s, target, source, env):
-            for test in [os.path.basename(arg)for arg in s.split(' ') if os.path.basename(arg).endswith('.sh')]:
-                p.InfoPrint(' Running ' + test + ' test...')
-
         if (sys.platform != 'win32' or
                 (env.Detect('gcc') and sys.platform == 'win32')):
+
+            def run_tests(s, target, source, env):
+            for test in [os.path.basename(arg)for arg in s.split(' ') if os.path.basename(arg).endswith('.sh')]:
+                p.InfoPrint(' Running ' + test + ' test...')
 
             if env['BUILD_SHARED']:
 
@@ -668,45 +668,45 @@ def CreateNewEnv():
                     + env['PROJECT_DIR'] + '/$TARGET 2>&1',
                     PRINT_CMD_LINE_FUNC=run_tests)
 
-        decls_headers = project_headers + subset_project_headers
-        if env['HAVE_GOBJECT']:
-            decls_headers.extend(gobject_headers + gobject_gen_headers)
+            decls_headers = project_headers + subset_project_headers
+            if env['HAVE_GOBJECT']:
+                decls_headers.extend(gobject_headers + gobject_gen_headers)
 
-        decls_sources = project_sources + subset_project_sources
-        if env['HAVE_GOBJECT']:
-            decls_headers.extend(gobject_sources + gobject_gen_sources)
+            decls_sources = project_sources + subset_project_sources
+            if env['HAVE_GOBJECT']:
+                decls_headers.extend(gobject_sources + gobject_gen_sources)
 
-        env.Command(
-            env['BUILD_DIR'] + '/tests/check-c-linkage-decls.out',
-            decls_headers + decls_sources,
-            'export libs=. && '
-            + env['PROJECT_DIR'] + '/repo/src/check-c-linkage-decls.sh > '
-            + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-            PRINT_CMD_LINE_FUNC=run_tests)
+            env.Command(
+                env['BUILD_DIR'] + '/tests/check-c-linkage-decls.out',
+                decls_headers + decls_sources,
+                'export libs=. && '
+                + env['PROJECT_DIR'] + '/repo/src/check-c-linkage-decls.sh > '
+                + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+                PRINT_CMD_LINE_FUNC=run_tests)
 
-        env.Command(
-            env['BUILD_DIR'] + '/tests/check-header-guards.out',
-            decls_headers + decls_sources,
-            'export libs=. && '
-            + env['PROJECT_DIR'] + '/repo/src/check-header-guards.sh > '
-            + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-            PRINT_CMD_LINE_FUNC=run_tests)
+            env.Command(
+                env['BUILD_DIR'] + '/tests/check-header-guards.out',
+                decls_headers + decls_sources,
+                'export libs=. && '
+                + env['PROJECT_DIR'] + '/repo/src/check-header-guards.sh > '
+                + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+                PRINT_CMD_LINE_FUNC=run_tests)
 
-        env.Command(
-            env['BUILD_DIR'] + '/tests/check-externs.out',
-            decls_headers,
-            'export libs=. && '
-            + env['PROJECT_DIR'] + '/repo/src/check-externs.sh > '
-            + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-            PRINT_CMD_LINE_FUNC=run_tests)
+            env.Command(
+                env['BUILD_DIR'] + '/tests/check-externs.out',
+                decls_headers,
+                'export libs=. && '
+                + env['PROJECT_DIR'] + '/repo/src/check-externs.sh > '
+                + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+                PRINT_CMD_LINE_FUNC=run_tests)
 
-        env.Command(
-            env['BUILD_DIR'] + '/tests/check-includes.out',
-            decls_headers + decls_sources,
-            'export libs=. && '
-            + env['PROJECT_DIR'] + '/repo/src/check-includes.sh > '
-            + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-            PRINT_CMD_LINE_FUNC=run_tests)
+            env.Command(
+                env['BUILD_DIR'] + '/tests/check-includes.out',
+                decls_headers + decls_sources,
+                'export libs=. && '
+                + env['PROJECT_DIR'] + '/repo/src/check-includes.sh > '
+                + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+                PRINT_CMD_LINE_FUNC=run_tests)
 
     Progress(progress, interval=1)
 
