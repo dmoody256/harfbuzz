@@ -127,6 +127,7 @@ def CreateNewEnv():
         subset_project_headers,
         GetSources('HB_SUBSET_sources', 'repo/src/Makefile.sources')
     )
+    subset_project_headers.append('repo/src/hb-subset.h')
 
     if env['HAVE_FREETYPE']:
         if not FindFreetype(env, conf_dir=env['BUILD_DIR']):
@@ -604,17 +605,32 @@ def CreateNewEnv():
             if env['BUILD_SHARED']:
 
                 def generate_def_file(s, target, source, env):
-                    p.InfoPrint(" Generating harfbuzz.def...")
+                    p.InfoPrint(" Generating " +
+                                os.path.basename(target[0].path) + "...")
 
                 def run_tests(s, target, source, env):
                     for test in [os.path.basename(arg)for arg in s.split(' ') if os.path.basename(arg).endswith('.sh')]:
                         p.InfoPrint(' Running ' + test + ' test...')
 
                 env.Command(
-                    env['BUILD_DIR'] + '/build_harfbuzz_shared/harfbuzz.def',
+                    env['PROJECT_DIR'] + '/install/shared/harfbuzz.def',
                     project_headers,
                     sys.executable + ' repo/src/gen-def.py $TARGET $SOURCES',
                     PRINT_CMD_LINE_FUNC=generate_def_file)
+
+                env.Command(
+                    env['PROJECT_DIR'] + '/install/shared/harfbuzz-subset.def',
+                    subset_project_headers,
+                    sys.executable + ' repo/src/gen-def.py $TARGET $SOURCES',
+                    PRINT_CMD_LINE_FUNC=generate_def_file)
+
+                if env['HAVE_GOBJECT']:
+                    env.Command(
+                        env['PROJECT_DIR'] +
+                        '/install/shared/harfbuzz-gobject.def',
+                        gobject_headers + gobject_gen_headers,
+                        sys.executable + ' repo/src/gen-def.py $TARGET $SOURCES',
+                        PRINT_CMD_LINE_FUNC=generate_def_file)
 
                 env.Command(
                     env['BUILD_DIR'] + '/tests/check-static-inits.out',
@@ -635,6 +651,20 @@ def CreateNewEnv():
                     libcpp_tests_libs,
                     'export libs=. && cd install/shared && '
                     + env['PROJECT_DIR'] + '/repo/src/check-libstdc++.sh > '
+                    + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+                    PRINT_CMD_LINE_FUNC=run_tests)
+
+                symbols_tests_libs = [
+                    'install/shared/harfbuzz.def', 'install/shared/harfbuzz-subset.def']
+                if env['HAVE_GOBJECT']:
+                    symbols_tests_libs.append(
+                        'install/shared/harfbuzz-gobject.def')
+
+                env.Command(
+                    env['BUILD_DIR'] + '/tests/check-symbols.out',
+                    symbols_tests_libs,
+                    'export libs=. && cd install/shared && '
+                    + env['PROJECT_DIR'] + '/repo/src/check-symbols.sh > '
                     + env['PROJECT_DIR'] + '/$TARGET 2>&1',
                     PRINT_CMD_LINE_FUNC=run_tests)
 
