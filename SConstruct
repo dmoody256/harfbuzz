@@ -668,6 +668,46 @@ def CreateNewEnv():
                     + env['PROJECT_DIR'] + '/$TARGET 2>&1',
                     PRINT_CMD_LINE_FUNC=run_tests)
 
+        decls_headers = project_headers + subset_project_headers
+        if env['HAVE_GOBJECT']:
+            decls_headers.extend(gobject_headers + gobject_gen_headers)
+
+        decls_sources = project_sources + subset_project_sources
+        if env['HAVE_GOBJECT']:
+            decls_headers.extend(gobject_sources + gobject_gen_sources)
+
+        env.Command(
+            env['BUILD_DIR'] + '/tests/check-c-linkage-decls.out',
+            decls_headers + decls_sources,
+            'export libs=. && '
+            + env['PROJECT_DIR'] + '/repo/src/check-c-linkage-decls.sh > '
+            + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+            PRINT_CMD_LINE_FUNC=run_tests)
+
+        env.Command(
+            env['BUILD_DIR'] + '/tests/check-header-guards.out',
+            decls_headers + decls_sources,
+            'export libs=. && '
+            + env['PROJECT_DIR'] + '/repo/src/check-header-guards.sh > '
+            + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+            PRINT_CMD_LINE_FUNC=run_tests)
+
+        env.Command(
+            env['BUILD_DIR'] + '/tests/check-externs.out',
+            decls_headers,
+            'export libs=. && '
+            + env['PROJECT_DIR'] + '/repo/src/check-externs.sh > '
+            + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+            PRINT_CMD_LINE_FUNC=run_tests)
+
+        env.Command(
+            env['BUILD_DIR'] + '/tests/check-includes.out',
+            decls_headers + decls_sources,
+            'export libs=. && '
+            + env['PROJECT_DIR'] + '/repo/src/check-includes.sh > '
+            + env['PROJECT_DIR'] + '/$TARGET 2>&1',
+            PRINT_CMD_LINE_FUNC=run_tests)
+
     Progress(progress, interval=1)
 
     atexit.register(display_build_status, env['PROJECT_DIR'], start_time)
