@@ -599,6 +599,10 @@ def CreateNewEnv():
                 LIBS=test_libs,
                 LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_harfbuzz_shared'])
 
+        def run_tests(s, target, source, env):
+            for test in [os.path.basename(arg)for arg in s.split(' ') if os.path.basename(arg).endswith('.sh')]:
+                p.InfoPrint(' Running ' + test + ' test...')
+
         if (sys.platform != 'win32' or
                 (env.Detect('gcc') and sys.platform == 'win32')):
 
@@ -607,10 +611,6 @@ def CreateNewEnv():
                 def generate_def_file(s, target, source, env):
                     p.InfoPrint(" Generating " +
                                 os.path.basename(target[0].path) + "...")
-
-                def run_tests(s, target, source, env):
-                    for test in [os.path.basename(arg)for arg in s.split(' ') if os.path.basename(arg).endswith('.sh')]:
-                        p.InfoPrint(' Running ' + test + ' test...')
 
                 env.Command(
                     env['PROJECT_DIR'] + '/install/shared/harfbuzz.def',
