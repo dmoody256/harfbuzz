@@ -589,7 +589,7 @@ def CreateNewEnv():
             if env['HAVE_GLIB']:
                 test_libs.append('glib-2.0')
             if env['HAVE_GRAPHITE2']:
-                test_libs.append('graphite2')  
+                test_libs.append('graphite2')
             if env['HAVE_ICU']:
                 test_libs.append('icuuc')
                 test_libs.append('icudata')
