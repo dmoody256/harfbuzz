@@ -106,6 +106,30 @@ def CreateNewEnv():
     project_extra_headers = []
     subset_project_sources = []
     subset_project_headers = []
+    test_progs = []
+
+    test_progs = [
+            'repo/src/main',
+            'repo/src/test',
+            'repo/src/test-gsub-would-substitute',
+            'repo/src/test-gpos-size-params',
+            'repo/src/test-buffer-serialize',
+            'repo/src/hb-ot-tag',
+            'repo/src/test-unicode-ranges'
+        ]
+
+    tests =  GetSources('TEST_PROGS', 'repo/test/api/Makefile.am')
+
+    tests += [
+        'repo/test/api/test-ot-color',
+        'repo/test/api/test-ot-name',
+        'repo/test/api/test-ot-tag',
+        'repo/test/api/test-c',
+        'repo/test/api/test-cplusplus'
+    ]
+
+    if env['HAVE_FREETYPE']:
+        tests += ['repo/test/api/test-ot-math']
 
     sources = (
         GetSources('HB_BASE_sources',
@@ -236,23 +260,23 @@ def CreateNewEnv():
         gobject_gen_headers += ['repo/src/hb-gobject-enums.h']
 
         def replace_enums(env, target, source):
-            header_target = os.path.basename(target[0].abspath)
-            f1 = open('repo/src/' + os.path.basename(target[0].abspath), 'w')
-            f2 = open('repo/src/' + os.path.basename(target[0].abspath), 'r')
+            f2 = open('repo/src/' + os.path.basename(target[0].abspath) + '.replace', 'r')
             contents = f2.read().replace('_t_get_type', '_get_type').replace('_T (', ' (')
             f2.close()
+            f1 = open('repo/src/' + os.path.basename(target[0].abspath), 'w')
             f1.write(contents)
             f1.close()
+            os.remove('repo/src/' + os.path.basename(target[0].abspath) + '.replace')
 
         cmd = ' '.join(glibmkenum_cmd + [
             '--template', 'repo/src/${TARGET.file}.tmpl',
             '--identifier-prefix', 'hb_',
-            '--symbol-prefix', 'hb_gobject']) + " $SOURCES > $TARGET"
+            '--symbol-prefix', 'hb_gobject']) + " $SOURCES > ${TARGET}.replace && sync"
 
         def glib_mkenums_emitter(target, source, env):
             source = [
                 file for file in source if not file.abspath.endswith('.tmpl')]
-            target_file = 'repo/src/' + os.path.basename(target[0].abspath)
+            target_file = 'repo/src/' + os.path.basename(target[0].abspath) 
             # hacky: https://github.com/SCons/scons/issues/2908
             Depends(
                 env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/' + target_file, target_file)
@@ -291,7 +315,7 @@ def CreateNewEnv():
         env.glib_mkenums_sources(
             'repo/src/hb-gobject-enums.cc',
             ['repo/src/hb-gobject-enums.cc.tmpl'] +
-            gobject_headers + project_headers,
+            gobject_headers + project_headers + ['repo/src/hb-gobject-enums.h'],
             PRINT_CMD_LINE_FUNC=generate_source,
             GLIBMKENUMS_SOURCE_DONE=False)
 
@@ -562,29 +586,32 @@ def CreateNewEnv():
 
     if env['BUILD_TESTS']:
 
-        tests = [
-            'main',
-            'test',
-            'test-gsub-would-substitute',
-            'test-gpos-size-params',
-            'test-buffer-serialize',
-            'hb-ot-tag',
-            'test-unicode-ranges'
-        ]
+    
+        for test in test_progs + tests:
 
-        for test in tests:
+            if os.path.exists(test + ".cc"):
+                test_path = test + ".cc"
+            else:
+                test_path = test + ".c"
+            
             test_env, test_bin = SetupBuildEnv(
                 env,
                 progress,
                 'exec',
-                test,
-                ['repo/src/' + test + ".cc"],
+                os.path.basename(test),
+                [test_path],
                 env['BUILD_DIR'] + '/tests',
-                'install/bin')
-            if test == 'hb-ot-tag':
+                'install/tests')
+
+            if test_path.endswith('.c'):
+                test_env['CCFLAGS'].remove('-std=c++11')
+                test_env['CCFLAGS'].remove('-fno-rtti')
+                test_env['CCFLAGS'].remove('-fno-threadsafe-statics')
+            
+            if os.path.basename(test) == 'hb-ot-tag':
                 test_env.Append(CPPDEFINES=['MAIN'])
 
-            test_libs = ['harfbuzz']
+            test_libs = ['harfbuzz', 'harfbuzz-subset']
             if env['HAVE_FREETYPE']:
                 test_libs.append('freetype')
             if env['HAVE_GLIB']:
@@ -597,14 +624,60 @@ def CreateNewEnv():
 
             test_env.Append(
                 LIBS=test_libs,
-                LIBPATH=[env['PROJECT_DIR'] + '/' + env['BUILD_DIR'] + '/build_harfbuzz_shared'])
+                LIBPATH=[env['PROJECT_DIR'] + '/install/shared'])
 
         if (sys.platform != 'win32' or
                 (env.Detect('gcc') and sys.platform == 'win32')):
 
-            def run_tests(s, target, source, env):
+            def run_tests_message(s, target, source, env):
                 for test in [os.path.basename(arg)for arg in s.split(' ') if os.path.basename(arg).endswith('.sh')]:
                     p.InfoPrint(' Running ' + test + ' test...')
+
+            def run_tests_result(target, source, env):
+               
+                for file in source:
+                    with open(file.abspath, 'r') as f:
+                        last_line = f.readlines()[-1]
+                        f.close()
+                        if last_line.strip() == 'PASS':
+                            p.TestPassPrint(' Test ' + os.path.splitext(os.path.basename(file.abspath))[0] + " passed.")
+                        else:
+                            p.TestFailPrint(' Test ' + os.path.splitext(os.path.basename(file.abspath))[0] + " failed.")
+                        return
+
+
+            def run_sh_test(sources, working_dir, test):
+
+                env.Command(
+                    env['BUILD_DIR'] + '/tests/' + os.path.splitext(os.path.basename(test))[0] + '.out',
+                    sources,
+                    'export libs=. && cd ' + working_dir + ' && ' 
+                    + test + ' > '
+                    + env['PROJECT_DIR'] + '/$TARGET 2>&1 && echo PASS >> ' + env['PROJECT_DIR'] + '/$TARGET',
+                    PRINT_CMD_LINE_FUNC=run_tests_message)
+
+
+                env.Command(
+                    'fake-target-'+os.path.splitext(os.path.basename(test))[0],
+                    env['BUILD_DIR'] + '/tests/' + os.path.splitext(os.path.basename(test))[0] + '.out',
+                    run_tests_result,
+                    PRINT_CMD_LINE_FUNC=run_tests_message)
+
+            def run_bin_test(test):
+
+                env.Command(
+                    env['BUILD_DIR'] + '/tests/' + os.path.basename(test) + '.out',
+                    env['PROJECT_DIR'] + '/install/tests/' + os.path.basename(test),
+                    'LD_LIBRARY_PATH=' + env['PROJECT_DIR'] + '/install/shared G_TEST_SRCDIR=' + os.path.dirname(test) + ' G_TEST_BUILDDIR=' + env['PROJECT_DIR'] + '/install/tests $SOURCE > '
+                    + env['PROJECT_DIR'] + '/$TARGET 2>&1 && echo PASS >> ' + env['PROJECT_DIR'] + '/$TARGET',
+                    PRINT_CMD_LINE_FUNC=run_tests_message)
+
+                env.Command(
+                    'fake-target-'+os.path.basename(test),
+                    env['BUILD_DIR'] + '/tests/' + os.path.basename(test) + '.out',
+                    run_tests_result,
+                    PRINT_CMD_LINE_FUNC=run_tests_message)
+                
 
             if env['BUILD_SHARED']:
 
@@ -632,27 +705,20 @@ def CreateNewEnv():
                         sys.executable + ' repo/src/gen-def.py $TARGET $SOURCES',
                         PRINT_CMD_LINE_FUNC=generate_def_file)
 
-                env.Command(
-                    env['BUILD_DIR'] + '/tests/check-static-inits.out',
+                run_sh_test(
                     env['BUILD_DIR'] + '/build_harfbuzz_static/libharfbuzz.a',
-                    'export libs=. && cd ' +
-                    env['BUILD_DIR'] + '/build_harfbuzz_static/repo/src '
-                    + env['PROJECT_DIR'] + '/repo/src/check-static-inits.sh > '
-                    + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-                    PRINT_CMD_LINE_FUNC=run_tests)
-
+                    env['BUILD_DIR'] + '/build_harfbuzz_static/repo/src',
+                    env['PROJECT_DIR'] + '/repo/src/check-static-inits.sh')
+    
                 libcpp_tests_libs = ['install/shared/libharfbuzz.so']
                 if env['HAVE_GOBJECT']:
                     libcpp_tests_libs.append(
                         'install/shared/libharfbuzz-gobject.so')
 
-                env.Command(
-                    env['BUILD_DIR'] + '/tests/check-libstdc++.out',
+                run_sh_test(
                     libcpp_tests_libs,
-                    'export libs=. && cd install/shared && '
-                    + env['PROJECT_DIR'] + '/repo/src/check-libstdc++.sh > '
-                    + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-                    PRINT_CMD_LINE_FUNC=run_tests)
+                    env['PROJECT_DIR'] + '/install/shared',
+                    env['PROJECT_DIR'] + '/repo/src/check-libstdc++.sh')
 
                 symbols_tests_libs = [
                     'install/shared/harfbuzz.def', 'install/shared/harfbuzz-subset.def']
@@ -660,13 +726,10 @@ def CreateNewEnv():
                     symbols_tests_libs.append(
                         'install/shared/harfbuzz-gobject.def')
 
-                env.Command(
-                    env['BUILD_DIR'] + '/tests/check-symbols.out',
+                run_sh_test(
                     symbols_tests_libs,
-                    'export libs=. && cd install/shared && '
-                    + env['PROJECT_DIR'] + '/repo/src/check-symbols.sh > '
-                    + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-                    PRINT_CMD_LINE_FUNC=run_tests)
+                    env['PROJECT_DIR'] + '/install/shared',
+                    env['PROJECT_DIR'] + '/repo/src/check-symbols.sh')
 
             decls_headers = project_headers + subset_project_headers
             if env['HAVE_GOBJECT']:
@@ -676,38 +739,29 @@ def CreateNewEnv():
             if env['HAVE_GOBJECT']:
                 decls_headers.extend(gobject_sources + gobject_gen_sources)
 
-            env.Command(
-                env['BUILD_DIR'] + '/tests/check-c-linkage-decls.out',
+            run_sh_test(
                 decls_headers + decls_sources,
-                'export libs=. && '
-                + env['PROJECT_DIR'] + '/repo/src/check-c-linkage-decls.sh > '
-                + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-                PRINT_CMD_LINE_FUNC=run_tests)
+                env['PROJECT_DIR'] + '/repo/src',
+                './check-c-linkage-decls.sh')
 
-            env.Command(
-                env['BUILD_DIR'] + '/tests/check-header-guards.out',
+            run_sh_test(
                 decls_headers + decls_sources,
-                'export libs=. && '
-                + env['PROJECT_DIR'] + '/repo/src/check-header-guards.sh > '
-                + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-                PRINT_CMD_LINE_FUNC=run_tests)
+                env['PROJECT_DIR'] + '/repo/src',
+                './check-header-guards.sh')
 
-            env.Command(
-                env['BUILD_DIR'] + '/tests/check-externs.out',
+            run_sh_test(
                 decls_headers,
-                'export libs=. && '
-                + env['PROJECT_DIR'] + '/repo/src/check-externs.sh > '
-                + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-                PRINT_CMD_LINE_FUNC=run_tests)
+                env['PROJECT_DIR'] + '/repo/src',
+                './check-externs.sh') 
 
-            env.Command(
-                env['BUILD_DIR'] + '/tests/check-includes.out',
-                decls_headers + decls_sources,
-                'export libs=. && '
-                + env['PROJECT_DIR'] + '/repo/src/check-includes.sh > '
-                + env['PROJECT_DIR'] + '/$TARGET 2>&1',
-                PRINT_CMD_LINE_FUNC=run_tests)
+            run_sh_test(
+                decls_headers,
+                env['PROJECT_DIR'] + '/repo/src',
+                './check-includes.sh') 
 
+            for test in tests:
+                run_bin_test(test)
+                
     Progress(progress, interval=1)
 
     atexit.register(display_build_status, env['PROJECT_DIR'], start_time)
@@ -939,10 +993,8 @@ def SortSources(source_list, header_list, mix_list):
     for source in mix_list:
         if source.endswith(".cc") or source.endswith(".c"):
             source_list.append(source)
-        elif source.endswith(".hh") or source.endswith(".h"):
+        elif source.endswith(".h"):
             header_list.append(source)
-        else:
-            p.ErrorPrint("Unhandled source: " + source)
 
 
 def GetHarfbuzzVersion(env=None):
