@@ -604,9 +604,12 @@ def CreateNewEnv():
                 'install/tests')
 
             if test_path.endswith('.c'):
-                test_env['CCFLAGS'].remove('-std=c++11')
-                test_env['CCFLAGS'].remove('-fno-rtti')
-                test_env['CCFLAGS'].remove('-fno-threadsafe-statics')
+                if '-std=c++11' in test_env['CCFLAGS']:
+                    test_env['CCFLAGS'].remove('-std=c++11')
+                if '-fno-rtti' in test_env['CCFLAGS']:
+                    test_env['CCFLAGS'].remove('-fno-rtti')
+                if '-fno-threadsafe-statics' in test_env['CCFLAGS']:
+                    test_env['CCFLAGS'].remove('-fno-threadsafe-statics')
             
             if os.path.basename(test) == 'hb-ot-tag':
                 test_env.Append(CPPDEFINES=['MAIN'])
