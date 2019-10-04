@@ -10,4 +10,4 @@ install:
 
 build: off
 build_script:
-  - cmd: scons
+  - cmd: C:/Python37-x64/Scripts/scons.bat
