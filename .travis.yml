@@ -1,18 +1,14 @@
+
+os: linux
+language: python
+python: "3.6"
+
 matrix:
   include:
-    - os: linux
-      dist: bionic
-      language: python
-        - "3.6"
-    - os: linux
-      dist: xenial
-      language: python
-        - "3.6"
-    - os: linux
-      dist: trusty
-      language: python
-        - "3.6"
-      
+    - dist: bionic
+    - dist: xenial
+    - dist: trusty
+
 install:
   - cd ${TRAVIS_BUILD_DIR}
   # install latest LCOV (1.9 was failing for me) [1]
