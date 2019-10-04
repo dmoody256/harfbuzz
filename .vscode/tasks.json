@@ -6,7 +6,12 @@
         {
             "label": "build",
             "type": "shell",
-            "command": "scons --have-freetype",
+            "windows": {
+                "command": "scons --have-freetype"
+            },
+            "linux": {
+                "command": "scons --have-freetype --have-graphite2 --have-glib --have-icu --have-gobject --have-introspection --build-tests"
+            },
             "problemMatcher": [
                 "$msCompile"
             ]

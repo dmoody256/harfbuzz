@@ -3,8 +3,12 @@ from BuildUtils.FindPackages import FindFreetype
 from BuildUtils.FindPackages import FindGraphite2
 from BuildUtils.FindPackages import FindGlib, FindIcu, FindCairo
 from BuildUtils.ColorPrinter import ColorPrinter
-from BuildUtils.SconsUtils import SetBuildJobs, SetupBuildEnv
+from BuildUtils.SconsUtils import SetBuildJobs, SetupBuildEnv, Mkdir
 from BuildUtils.SconsUtils import ProgressCounter, display_build_status
+
+
+from SCons.Errors import BuildError
+
 import SCons.Script.Main
 import SCons.Action
 import os
@@ -19,7 +23,6 @@ import fileinput
 import subprocess
 
 start_time = time.time()
-
 
 def CreateNewEnv():
 
@@ -118,7 +121,7 @@ def CreateNewEnv():
             'repo/src/test-unicode-ranges'
         ]
 
-    tests =  GetSources('TEST_PROGS', 'repo/test/api/Makefile.am')
+    tests = GetSources('TEST_PROGS', 'repo/test/api/Makefile.am')
 
     tests += [
         'repo/test/api/test-ot-color',
@@ -136,8 +139,6 @@ def CreateNewEnv():
                    'repo/src/Makefile.sources') +
         GetSources('HB_BASE_RAGEL_GENERATED_sources',
                    'repo/src/Makefile.sources') +
-        GetSources('HB_FALLBACK_sources',
-                   'repo/src/Makefile.sources') +
         GetSources('HB_BASE_headers', 'repo/src/Makefile.sources'))
 
     SortSources(
@@ -154,40 +155,40 @@ def CreateNewEnv():
     subset_project_headers.append('repo/src/hb-subset.h')
 
     if env['HAVE_FREETYPE']:
-        if not FindFreetype(env, conf_dir=env['BUILD_DIR']):
+        if not FindFreetype(env, conf_dir=env['PROJECT_DIR'] + "/" + env['BUILD_DIR']):
             p.ErrorPrint(
                 "Requested build with Freetype, but couldn't find it.")
             return
-        env.Append(CPPDEFINES=[('HAVE_FREETYPE', '1')])
+        env.Append(CPPDEFINES = [('HAVE_FREETYPE', '1')])
         project_sources += ['repo/src/hb-ft.cc']
         project_headers += ['repo/src/hb-ft.h']
 
-    if env['HAVE_GRAPHITE2'] and FindGraphite2(env, conf_dir=env['BUILD_DIR']):
-        env.Append(CPPDEFINES=['HAVE_GRAPHITE2'])
+    if env['HAVE_GRAPHITE2'] and FindGraphite2(env, conf_dir = env['BUILD_DIR']):
+        env.Append(CPPDEFINES = ['HAVE_GRAPHITE2'])
         project_sources += ['repo/src/hb-graphite2.cc']
         project_headers += ['repo/src/hb-graphite2.h']
 
-    if env['HAVE_GLIB'] and FindGlib(env, conf_dir=env['BUILD_DIR']):
-        env.Append(CPPDEFINES=['HAVE_GLIB'])
+    if env['HAVE_GLIB'] and FindGlib(env, conf_dir = env['BUILD_DIR']):
+        env.Append(CPPDEFINES = ['HAVE_GLIB'])
         project_sources += ['repo/src/hb-glib.cc']
         project_headers += ['repo/src/hb-glib.h']
 
-    if env['HAVE_ICU'] and FindIcu(env, conf_dir=env['BUILD_DIR']):
-        env.Append(CPPDEFINES=['HAVE_ICU'])
+    if env['HAVE_ICU'] and FindIcu(env, conf_dir = env['BUILD_DIR']):
+        env.Append(CPPDEFINES = ['HAVE_ICU'])
         project_sources += ['repo/src/hb-icu.cc']
         project_headers += ['repo/src/hb-icu.h']
 
     if sys.platform == 'darwin':
         if env['HAVE_CORETEXT']:
-            env.Append(CPPDEFINES=['HAVE_CORETEXT'])
+            env.Append(CPPDEFINES = ['HAVE_CORETEXT'])
             project_sources += ['repo/src/hb-coretext.cc']
             project_headers += ['repo/src/hb-coretext.h']
 
     if sys.platform == 'win32':
         if env['HAVE_UNISCRIBE']:
             env.Append(
-                CPPDEFINES=['HAVE_UNISCRIBE'],
-                LIBS=[
+                CPPDEFINES = ['HAVE_UNISCRIBE'],
+                LIBS = [
                     'usp10',
                     'gdi32',
                     'rpcrt4'
@@ -197,51 +198,51 @@ def CreateNewEnv():
 
         if env['HAVE_DIRECTWRITE']:
             env.Append(
-                CPPDEFINES=['HAVE_DIRECTWRITE'],
-                LIBS=[
+                CPPDEFINES = ['HAVE_DIRECTWRITE'],
+                LIBS = [
                     'dwrite',
                     'rpcrt4'
                 ])
             project_sources += ['repo/src/hb-directwrite.cc']
             project_headers += ['repo/src/hb-directwrite.h']
-    headercom = None
-    sourcecom = None
+    headercom=None
+    sourcecom=None
 
     ConfigureEnv(env)
-    env.Append(CPPPATH='repo/src')
+    env.Append(CPPPATH = 'repo/src')
 
     if env['HAVE_GOBJECT']:
 
-        glibmkenum_path = None
-        perl_path = None
-        glibmkenum_cmd = None
+        glibmkenum_path=None
+        perl_path=None
+        glibmkenum_cmd=None
 
-        bin_ext = ""
+        bin_ext=""
         if sys.platform == 'win32':
-            bin_ext = ".exe"
+            bin_ext=".exe"
 
         for path in os.environ["PATH"].split(os.pathsep):
             if os.access(os.path.join(path, 'glib-mkenums'), os.X_OK):
-                glibmkenum_path = os.path.join(path, 'glib-mkenums')
+                glibmkenum_path=os.path.join(path, 'glib-mkenums')
             if os.access(os.path.join(path, 'perl' + bin_ext), os.X_OK):
-                perl_path = os.path.join(path, 'perl' + bin_ext)
+                perl_path=os.path.join(path, 'perl' + bin_ext)
 
         if glibmkenum_path:
-            process = subprocess.Popen(
+            process=subprocess.Popen(
                 [sys.executable, glibmkenum_path, '--version'],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE)
-            stdout, stderr = process.communicate()
+                stdout = subprocess.PIPE,
+                stderr = subprocess.PIPE)
+            stdout, stderr=process.communicate()
             if process.returncode == 0:
-                glibmkenum_cmd = [sys.executable, glibmkenum_path]
+                glibmkenum_cmd=[sys.executable, glibmkenum_path]
             elif perl_path:
-                process = subprocess.Popen(
+                process=subprocess.Popen(
                     [perl_path, glibmkenum_path, '--version'],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE)
-                stdout, stderr = process.communicate()
+                    stdout = subprocess.PIPE,
+                    stderr = subprocess.PIPE)
+                stdout, stderr=process.communicate()
                 if process.returncode == 0:
-                    glibmkenum_cmd = [perl_path, glibmkenum_path]
+                    glibmkenum_cmd=[perl_path, glibmkenum_path]
         else:
             p.ErrorPrint(
                 "Requested build with gobjects, but couldn't find glib-mkenums")
@@ -255,28 +256,29 @@ def CreateNewEnv():
         gobject_sources += ['repo/src/hb-gobject-structs.cc']
         gobject_gen_sources += ['repo/src/hb-gobject-enums.cc']
         gobject_structs_headers += ['repo/src/hb-gobject-structs.h']
-        gobject_headers += gobject_structs_headers + \
-            ['repo/src/hb-gobject.h']
+        gobject_headers += gobject_structs_headers + ['repo/src/hb-gobject.h']
         gobject_gen_headers += ['repo/src/hb-gobject-enums.h']
 
         def replace_enums(env, target, source):
-            f2 = open('repo/src/' + os.path.basename(target[0].abspath) + '.replace', 'r')
-            contents = f2.read().replace('_t_get_type', '_get_type').replace('_T (', ' (')
+            f2=open('repo/src/' + \
+                    os.path.basename(target[0].abspath) + '.replace', 'r')
+            contents=f2.read().replace('_t_get_type', '_get_type').replace('_T (', ' (')
             f2.close()
-            f1 = open('repo/src/' + os.path.basename(target[0].abspath), 'w')
+            f1=open('repo/src/' + os.path.basename(target[0].abspath), 'w')
             f1.write(contents)
             f1.close()
-            os.remove('repo/src/' + os.path.basename(target[0].abspath) + '.replace')
+            os.remove('repo/src/' + \
+                      os.path.basename(target[0].abspath) + '.replace')
 
-        cmd = ' '.join(glibmkenum_cmd + [
+        cmd=' '.join(glibmkenum_cmd + [
             '--template', 'repo/src/${TARGET.file}.tmpl',
             '--identifier-prefix', 'hb_',
             '--symbol-prefix', 'hb_gobject']) + " $SOURCES > ${TARGET}.replace && sync"
 
         def glib_mkenums_emitter(target, source, env):
-            source = [
+            source=[
                 file for file in source if not file.abspath.endswith('.tmpl')]
-            target_file = 'repo/src/' + os.path.basename(target[0].abspath) 
+            target_file = 'repo/src/' + os.path.basename(target[0].abspath)
             # hacky: https://github.com/SCons/scons/issues/2908
             Depends(
                 env['BUILD_DIR'] + '/build_harfbuzz-gobject_shared/' + target_file, target_file)
@@ -284,7 +286,7 @@ def CreateNewEnv():
                 env['BUILD_DIR'] + '/build_harfbuzz-gobject_static/' + target_file, target_file)
             return (target_file, source)
 
-        env['BUILDERS']['glib_mkenums_headers'] = Builder(
+        env['BUILDERS']['glib_mkenums_headers']=Builder(
             action=[SCons.Action.CommandAction(
                 cmd), SCons.Action.FunctionAction(replace_enums, {})],
             emitter=glib_mkenums_emitter,
@@ -515,7 +517,7 @@ def CreateNewEnv():
             ' '.join(compiler_cmd_str),
             PRINT_CMD_LINE_FUNC=run_introspection_compiler
         )
-
+        
     libraries = [{
         'name': 'harfbuzz',
         'source': project_sources + project_extra_sources,
@@ -586,7 +588,6 @@ def CreateNewEnv():
 
     if env['BUILD_TESTS']:
 
-    
         for test in test_progs + tests:
 
             if os.path.exists(test + ".cc"):
@@ -793,7 +794,7 @@ def ConfigureEnv(env):
         p.InfoPrint(configureString)
 
         # ruins logs so turning it off
-        # SCons.Script.Main.progress_display.set_mode(1)
+        SCons.Script.Main.progress_display.set_mode(1)
 
         conf = Configure(env, conf_dir=env['BUILD_DIR'] + "/conf_tests", log_file=env['BUILD_DIR'] + "/conf.log",
                          custom_tests={
@@ -878,7 +879,7 @@ def ConfigureEnv(env):
         conf.CheckIntelAtomicPrimitives()
 
         # ruins logs so turning it off
-        # SCons.Script.Main.progress_display.set_mode(0)
+        SCons.Script.Main.progress_display.set_mode(0)
 
         env = conf.Finish()
 
@@ -985,11 +986,15 @@ def ConfigPlatformIDE(env, sourceFiles, headerFiles, resources, program):
 
 def GetSources(var, file):
     with open(file) as f:
-        sources = re.search(
-            r'^' + var + r'\s=\s([^$]+)\\$', f.read(), re.MULTILINE).group(1).split('\\')
-        sources = [line.strip() for line in sources if line != ""]
-        sources = [os.path.dirname(file) + '/' + line for line in sources]
-        return sources
+        match = re.search(
+            r'^' + var + r'\s=\s([^$]+)\\$', f.read(), re.MULTILINE)
+        if match:
+            sources = match.group(1).split('\\')
+            sources = [line.strip() for line in sources if line != ""]
+            sources = [os.path.dirname(file) + '/' + line for line in sources]
+            return sources
+        else:
+            raise BuildError(errstr='Could not find %s in %s' % (var, file))
 
 
 def SortSources(source_list, header_list, mix_list):
@@ -1072,12 +1077,12 @@ def SetupOptions():
     )
 
     AddOption(
-        '--no-build-tests',
+        '--build-tests',
         dest='option_build_tests',
-        action='store_false',
+        action='store_true',
         metavar='BOOL',
-        default=True,
-        help="Don't Build harfbuzz tests"
+        default=False,
+        help="Build harfbuzz tests"
     )
 
     AddOption(
@@ -1173,11 +1178,10 @@ def SetupOptions():
         )
 
     # ruins logs so turning it off
-    # if(not GetOption('option_verbose')):
-        #scons_ver = SCons.__version__
-        # if int(scons_ver[0]) >= 3:
-        #    SetOption('silent', 1)
-        # SCons.Script.Main.progress_display.set_mode(0)
+    #if(not GetOption('option_verbose')):
+    #    scons_ver = SCons.__version__
+    #    if int(scons_ver[0]) >= 3:
+    #        SetOption('no_progress', 1)
 
 
 CreateNewEnv()
