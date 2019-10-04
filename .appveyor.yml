@@ -1,6 +1,11 @@
+image:
+  - Visual Studio 2015
+  - Visual Studio 2017
+  - Visual Studio 2019
+
 install:
-  - python -m pip install -U --progress-bar off pip setuptools wheel
-  - python -m pip install -U --progress-bar off scons pypiwin32 colorama
+  - C:/Python37-x64/python.exe -m pip install -U --progress-bar off pip setuptools wheel
+  - C:/Python37-x64/python.exe -m pip install -U --progress-bar off scons pypiwin32 colorama
   - git submodule update --init --recursive
 
 build: off
