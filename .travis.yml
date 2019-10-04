@@ -2,13 +2,16 @@ matrix:
   include:
     - os: linux
       dist: bionic
-      python: '3.6'
+      language: python
+        - "3.6"
     - os: linux
       dist: xenial
-      python: '3.6'
+      language: python
+        - "3.6"
     - os: linux
       dist: trusty
-      python: '3.6'
+      language: python
+        - "3.6"
       
 install:
   - cd ${TRAVIS_BUILD_DIR}
