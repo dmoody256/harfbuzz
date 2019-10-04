@@ -1,7 +1,4 @@
-image:
-  - Visual Studio 2015
-  - Visual Studio 2017
-  - Visual Studio 2019
+image: Visual Studio 2019
 
 install:
   - C:/Python37-x64/python.exe -m pip install -U --progress-bar off pip setuptools wheel
