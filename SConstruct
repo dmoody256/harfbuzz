@@ -212,7 +212,7 @@ def CreateNewEnv():
     env.Append(CPPPATH = 'repo/src')
 
     if env['HAVE_GOBJECT']:
-
+        env.Append(CPPDEFINES = ['HAVE_GOBJECT'])
         glibmkenum_path=None
         perl_path=None
         glibmkenum_cmd=None
@@ -607,6 +607,7 @@ def CreateNewEnv():
             if test_path.endswith('.c'):
                 if '-std=c++11' in test_env['CCFLAGS']:
                     test_env['CCFLAGS'].remove('-std=c++11')
+                    test_env.Append(CCFLAGS=['-std=gnu11'])
                 if '-fno-rtti' in test_env['CCFLAGS']:
                     test_env['CCFLAGS'].remove('-fno-rtti')
                 if '-fno-threadsafe-statics' in test_env['CCFLAGS']:
